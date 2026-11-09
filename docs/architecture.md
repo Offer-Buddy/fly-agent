@@ -29,8 +29,7 @@ graph TB
     end
 
     subgraph Observability["Observability"]
-        Langfuse["Langfuse\n(LLM traces)"]
-        Prometheus["Prometheus\n+ Grafana"]
+        Langfuse["Langfuse\n(LLM traces, self-hosted)"]
         Logs["structlog\n(JSON / console)"]
     end
 
@@ -42,9 +41,11 @@ graph TB
     Graph <--> Checkpointer
     Memory --> PG
     Checkpointer --> PG
-    API --> Prometheus
     API --> Logs
 ```
+
+> 请求级指标（原 Prometheus + Grafana）已移除，逐请求耗时改由
+> `LoggingContextMiddleware` 打的 `http_request_completed` 日志承担。
 
 ## 请求生命周期
 

@@ -1,11 +1,13 @@
 # =============================================================================
-# 全栈编排：API + PostgreSQL(pgvector) + Redis + Prometheus + Grafana + cadvisor
+# 全栈编排：API + PostgreSQL(pgvector) + Redis
 # =============================================================================
 # 常用命令（都通过 Makefile 包装，会顺带校验 ENV 与 .env 文件）：
-#   make docker-up      # 只起 db + app
-#   make stack-up       # 起全部服务
-#   make stack-logs     # 跟全部日志
-#   make stack-down     # 停全部服务
+#   make docker-up      # 起 db + redis + app
+#   make docker-down    # 停全部服务
+#   make docker-logs    # 跟日志
+#
+# 监控栈（Prometheus / Grafana / cadvisor）已移除；LLM 链路追踪走自建 Langfuse，
+# 见 docker-compose.langfuse.yml 与 `make langfuse-up`。
 #
 # 直接调 compose 时要自己带环境文件，否则 ${POSTGRES_USER} 之类会解析成空：
 #   APP_ENV=development docker-compose --env-file .env.development up -d
@@ -13,6 +15,9 @@
 # 只想单独起数据层、不构建 app 镜像，用 docker-compose.datastores.yml
 # （两者都会占 5432 / 6379，别同时启动）。
 # =============================================================================
+
+# 项目名显式固定，不随目录名变化：网络名与容器名前缀都依赖它。
+name: fly-agent
 
 # 这行是 Compose V1 时代的格式声明，Compose V2 已忽略；保留只为兼容老命令。
 version: '3.8'
@@ -49,7 +54,7 @@ services:
       retries: 5
     restart: always
     networks:
-      - monitoring
+      - app-net
 
   # ---------------------------------------------------------------------------
   # Redis —— 可选组件
@@ -70,7 +75,7 @@ services:
       retries: 5
     restart: always
     networks:
-      - monitoring
+      - app-net
 
   # ---------------------------------------------------------------------------
   # 应用本体（FastAPI + LangGraph）
@@ -104,6 +109,11 @@ services:
       # 用 1 号库，避开其他服务可能占用的 0 号库，防止 key 互相覆盖
       # （compose 起的 redis 是共享实例，不是这个项目独占的）
       - REDIS_DB=1
+      # 自建 Langfuse 是另一个 compose 项目（fly-agent-langfuse），通过共享网络
+      # fly-agent-net 直连，所以这里必须用服务名而不是 localhost——容器里的
+      # localhost 指 app 自己。宿主机直跑（make dev）时读 .env 的 localhost:3010，
+      # 不经过这个覆盖。想改指向别的实例就设 LANGFUSE_HOST_INTERNAL。
+      - LANGFUSE_HOST=${LANGFUSE_HOST_INTERNAL:-http://langfuse-web:3000}
     depends_on:
       db:
         # 等到健康检查通过再启动，否则应用会在启动瞬间连不上库而崩溃重启
@@ -121,79 +131,30 @@ services:
       start_period: 10s
     restart: on-failure
     networks:
-      - monitoring
+      - app-net
 
   # ---------------------------------------------------------------------------
-  # Prometheus —— 指标采集
+  # 监控与可视化
   # ---------------------------------------------------------------------------
-  # 抓取目标写在 prometheus/prometheus.yml 里，默认抓 app:8000/metrics
-  # （应用侧由 app/core/metrics.py 暴露，starlette-prometheus 提供中间件指标）
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-    networks:
-      - monitoring
-    restart: always
-
-  # ---------------------------------------------------------------------------
-  # Grafana —— 可视化看板
-  # ---------------------------------------------------------------------------
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      # grafana-storage 存用户、看板等运行期数据；下面两个挂载是「配置即代码」，
-      # 启动时自动把 grafana/dashboards 下的 JSON 看板导入
-      - grafana-storage:/var/lib/grafana
-      # 看板与服务端数据源都是「配置即代码」，启动时自动导入。
-      # datasources 必须挂：只挂看板不挂数据源，面板会引用到不存在的数据源，全是空图。
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
-    environment:
-      # 默认账号 admin / admin。生产环境必须改，或用 Docker secret 注入。
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      # 关掉自助注册，避免任何人注册进来就能看看板
-      - GF_USERS_ALLOW_SIGN_UP=false
-    networks:
-      - monitoring
-    restart: always
-
-  # ---------------------------------------------------------------------------
-  # cadvisor —— 容器级资源指标
-  # ---------------------------------------------------------------------------
-  # 采集每个容器的 CPU / 内存 / 网络 / 磁盘 IO，供 Grafana 里做容器维度看板。
-  # 只支持 Linux 宿主：它需要读 cgroup 与 /var/lib/docker，在 Docker Desktop
-  # （macOS / Windows）里通常拿不到有意义的容器数据，可以整个服务删掉。
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      # 全部只读挂载：cadvisor 只观察不修改，:ro 能限制它被利用时的破坏面
-      - /:/rootfs:ro
-      - /var/run:/var/run:rw
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    networks:
-      - monitoring
-    restart: always
+  # 原 Prometheus + Grafana + cadvisor 三件套已移除：
+  #   LLM 侧观测由自建 Langfuse 负责（docker-compose.langfuse.yml），
+  #   请求侧观测由 structlog 的 http_request_completed 日志负责。
+  #   要接回指标栈时，再加服务并让 app 暴露 /metrics 即可。
 
 
 # 所有服务放在同一个自定义 bridge 网络里：
 # 好处是服务名即主机名（app、db、redis 可直接互相访问），
 # 且与宿主机上其他 compose 项目的网络隔离，不会串台。
+#
+# 网络名显式固定为 fly-agent-net：自建 Langfuse 是另一个 compose 项目，
+# 它用 external 方式加入本网络，才能让 app 容器解析到 langfuse-web。
+# 不写死名字的话，网络会随目录名变成 <目录名>_app-net，改名即断。
 networks:
-  monitoring:
+  app-net:
+    name: fly-agent-net
     driver: bridge
 
 # 命名卷：由 Docker 管理，`docker compose down` 不会删（要删得加 -v）
 volumes:
-  grafana-storage:
   postgres-data:
   redis-data:

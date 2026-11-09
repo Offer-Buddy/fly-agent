@@ -22,7 +22,6 @@ from app.core.config import settings
 from app.core.langgraph.graph import LangGraphAgent
 from app.core.limiter import limiter
 from app.core.logging import logger
-from app.core.metrics import llm_stream_duration_seconds
 from app.core.observability import trace_attributes
 from app.models.session import Session
 from app.schemas.chat import (
@@ -122,12 +121,11 @@ async def chat_stream(
                 Exception: 流式处理中出现异常
             """
             try:
-                with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
-                    async for chunk in agent.get_stream_response(
-                        chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
-                    ):
-                        response = StreamResponse(content=chunk, done=False)
-                        yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
+                async for chunk in agent.get_stream_response(
+                    chat_request.messages, session.id, user_id=str(session.user_id), username=session.username
+                ):
+                    response = StreamResponse(content=chunk, done=False)
+                    yield f"data: {json.dumps(response.model_dump(mode='json'))}\n\n"
 
                 # 结束帧：告诉前端可以停止读取
                 final_response = StreamResponse(content="", done=True)

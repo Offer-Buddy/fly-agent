@@ -14,8 +14,8 @@ make check                # lint + typecheck
 make eval                 # Run LLM evals (interactive)
 make eval-quick           # Run LLM evals (default settings)
 make migrate              # Run DB migrations to latest (Alembic)
-make docker-up            # Docker: API + DB (ENV=development by default)
-make stack-up ENV=development  # Full stack: API + DB + Prometheus + Grafana
+make docker-up            # Docker: API + DB + Redis (ENV=development by default)
+make langfuse-up          # Self-hosted Langfuse stack (traces UI on :3010)
 ```
 
 > 所有 server/DB/Docker 目标均接受 `ENV=development|staging|production|test`。
@@ -33,8 +33,7 @@ app/
     logging.py     # structlog setup
     llm.py         # LLM service with retry logic
     limiter.py     # Rate limiting (slowapi)
-    metrics.py     # Prometheus metrics
-    middleware.py  # ASGI middleware
+    middleware.py  # ASGI middleware（含每请求耗时日志）
     prompts/       # System prompts
   models/          # SQLModel ORM models
   schemas/         # Pydantic request/response schemas + graph state
@@ -52,7 +51,7 @@ scripts/           # Environment setup, Docker build scripts
 - **Langfuse**：用于 LLM 可观测性与链路追踪
 - **PostgreSQL + pgvector**：用于长期记忆存储（mem0ai）
 - **JWT 认证**：配合会话管理
-- **Prometheus + Grafana**：用于监控
+- **自建 Langfuse**：LLM 链路追踪与可视化（`make langfuse-up`）
 
 ## 速查：关键规则
 
@@ -145,7 +144,7 @@ scripts/           # Environment setup, Docker build scripts
 ## 可观测性
 
 - 在所有 Agent 操作中接入 Langfuse 做 LLM 追踪
-- 导出 Prometheus 指标以观测 API 性能
+- 每个请求结束时由 `LoggingContextMiddleware` 打一条 `http_request_completed`（含 `duration_ms`）
 - 使用带上下文绑定（request_id、session_id、user_id）的结构化日志
 - 跟踪 LLM 推理耗时、token 用量与成本
 
@@ -176,7 +175,6 @@ scripts/           # Environment setup, Docker build scripts
 - **tenacity**：重试逻辑
 - **rich**：终端格式化
 - **slowapi**：限流
-- **prometheus-client**：指标采集
 
 ## 本项目的 10 条戒律
 

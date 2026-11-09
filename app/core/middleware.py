@@ -1,7 +1,11 @@
-"""自定义中间件：请求指标、日志上下文、按需性能剖析。
+"""自定义中间件：日志上下文与按需性能剖析。
 
-三个中间件的注册顺序在 ``app/main.py`` 里，顺序会影响指标与上下文能否
-覆盖到异常路径，改动前先看清楚。
+两个中间件的注册顺序在 ``app/main.py`` 里，顺序会影响上下文能否覆盖到
+异常路径，改动前先看清楚。
+
+请求级的计数与耗时不再走 Prometheus 指标（已随监控栈一起移除），
+改由 ``LoggingContextMiddleware`` 每条请求打一句 ``http_request_completed``，
+耗时字段 ``duration_ms`` 就是原来 histogram 观测的那个值。
 """
 
 import json
@@ -28,10 +32,6 @@ from app.core.logging import (
     clear_context,
     logger,
 )
-from app.core.metrics import (
-    http_request_duration_seconds,
-    http_requests_total,
-)
 
 # pyinstrument 是开发依赖，生产镜像可能没装；保留探测以便优雅降级
 if TYPE_CHECKING:
@@ -51,42 +51,12 @@ else:
         PYINSTRUMENT_AVAILABLE = False
 
 
-class MetricsMiddleware(BaseHTTPMiddleware):
-    """采集每个 HTTP 请求的计数与耗时指标。"""
-
-    @override
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """统计单个请求的指标。
-
-        Args:
-            request: 进来的请求
-            call_next: 下一个中间件或路由处理函数
-
-        Returns:
-            Response: 应用返回的响应
-        """
-        start_time = time.time()
-        # 先预设 500：如果 call_next 抛异常，指标里仍能记下这次失败
-        status_code = 500
-
-        try:
-            response = await call_next(request)
-            status_code = response.status_code
-        except Exception:
-            raise
-        finally:
-            duration = time.time() - start_time
-
-            # 记录请求数与耗时
-            http_requests_total.labels(method=request.method, endpoint=request.url.path, status=status_code).inc()
-
-            http_request_duration_seconds.labels(method=request.method, endpoint=request.url.path).observe(duration)
-
-        return response
-
-
 class LoggingContextMiddleware(BaseHTTPMiddleware):
-    """把 user_id / session_id 注入日志上下文。"""
+    """把 user_id / session_id 注入日志上下文，并为每条请求记一次耗时。
+
+    耗时替代了原先 Prometheus histogram 的位置：没有指标栈之后，
+    ``http_request_completed`` 这条日志是唯一的逐请求耗时来源。
+    """
 
     @override
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -99,6 +69,11 @@ class LoggingContextMiddleware(BaseHTTPMiddleware):
         Returns:
             Response: 应用返回的响应
         """
+        # perf_counter 单调递增，不受系统时钟调整影响，适合测时长
+        start_time = time.perf_counter()
+        # 先预设 500：如果 call_next 抛异常，日志里仍能记下这次失败
+        status_code = 500
+
         try:
             # 清掉上一个请求可能残留的上下文
             clear_context()
@@ -126,6 +101,7 @@ class LoggingContextMiddleware(BaseHTTPMiddleware):
 
             # 放行请求
             response = await call_next(request)
+            status_code = response.status_code
 
             # 请求处理完后再补 user_id（鉴权依赖此时已写入 request.state）
             if hasattr(request.state, "user_id"):
@@ -134,6 +110,14 @@ class LoggingContextMiddleware(BaseHTTPMiddleware):
             return response
 
         finally:
+            # 逐请求耗时：替代原 Prometheus histogram，慢请求靠这条日志捞
+            logger.info(
+                "http_request_completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=status_code,
+                duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+            )
             # 无论成功失败都要清空，避免上下文泄漏到下一个请求
             clear_context()
 

@@ -141,8 +141,10 @@ trace-report:
 	@$(call run_with_env,uv run python scripts/trace_report.py --hours $(HOURS))
 
 # 自建 Langfuse 全栈（web + worker + postgres + clickhouse + redis + minio）
-# 端口已避让本项目的 db(5432)、redis(6379) 与 Grafana(3000)，可与开发栈同时跑
+# 端口：web 3010、minio 9092/9093、pg 5433、redis 6380、clickhouse 8123/9300
+# 它用 external 网络 fly-agent-net 接入开发栈，所以这里先确保网络存在（幂等）
 langfuse-up:
+	@docker network create fly-agent-net 2>/dev/null || true
 	@$(DOCKER_COMPOSE) -f docker-compose.langfuse.yml up -d
 	@echo "Langfuse 界面：http://localhost:3010（首次启动要等 1~2 分钟建表）"
 
@@ -191,11 +193,11 @@ docker-build:
 	$(call check_env)
 	@./scripts/build-docker.sh $(ENV)
 
-# 起 db + app 两个容器；--env-file 让 compose 能解析 ${POSTGRES_USER} 这类变量，
+# 起 db + redis + app 三个容器；--env-file 让 compose 能解析 ${POSTGRES_USER} 这类变量，
 # APP_ENV 传给 compose，用于挑 .env.${APP_ENV} 与构建参数
 docker-up:
 	$(call load_env_file)
-	@APP_ENV=$(ENV) $(DOCKER_COMPOSE) --env-file .env.$(ENV) up -d --build db app
+	@APP_ENV=$(ENV) $(DOCKER_COMPOSE) --env-file .env.$(ENV) up -d --build db redis app
 
 docker-down:
 	$(call load_env_file)
@@ -204,7 +206,7 @@ docker-down:
 # -f 跟随输出，Ctrl+C 只退出日志不影响容器
 docker-logs:
 	$(call load_env_file)
-	@APP_ENV=$(ENV) $(DOCKER_COMPOSE) --env-file .env.$(ENV) logs -f app db
+	@APP_ENV=$(ENV) $(DOCKER_COMPOSE) --env-file .env.$(ENV) logs -f app db redis
 
 # 在运行中的 app 容器里跑迁移。为什么要在容器里跑：
 # 数据库主机名 "db" 是 compose 内部 DNS，宿主机上解析不了。
@@ -222,22 +224,6 @@ docker-migrate-downgrade:
 docker-migrate-history:
 	$(call load_env_file)
 	@APP_ENV=$(ENV) $(DOCKER_COMPOSE) --env-file .env.$(ENV) exec -T app /app/.venv/bin/alembic history --verbose
-
-# ---------------------------------------------------------------------------
-# Docker —— 全栈（API + 数据库 + Prometheus + Grafana + cadvisor）
-# ---------------------------------------------------------------------------
-# up -d 不带服务名，表示启动 docker-compose.yml 里的全部服务
-stack-up:
-	$(call load_env_file)
-	@APP_ENV=$(ENV) $(DOCKER_COMPOSE) --env-file .env.$(ENV) up -d
-
-stack-down:
-	$(call load_env_file)
-	@APP_ENV=$(ENV) $(DOCKER_COMPOSE) --env-file .env.$(ENV) down
-
-stack-logs:
-	$(call load_env_file)
-	@APP_ENV=$(ENV) $(DOCKER_COMPOSE) --env-file .env.$(ENV) logs -f
 
 # ---------------------------------------------------------------------------
 # 杂项
@@ -288,19 +274,14 @@ help:
 	@echo "  pre-commit-update        升级钩子版本"
 	@echo "  settings-check           配置三处一致性自查（代码/模板/文档）"
 	@echo ""
-	@echo "Docker（API + 数据库）："
+	@echo "Docker（API + 数据库 + Redis）："
 	@echo "  docker-build             构建镜像"
-	@echo "  docker-up                启动 API 与数据库容器"
+	@echo "  docker-up                启动 API、数据库与 Redis 容器"
 	@echo "  docker-down              停止容器"
 	@echo "  docker-logs              持续查看容器日志"
 	@echo "  docker-migrate           在 app 容器内执行迁移"
 	@echo "  docker-migrate-downgrade 在 app 容器内回退一次迁移"
 	@echo "  docker-migrate-history   在 app 容器内查看迁移历史"
-	@echo ""
-	@echo "Docker（全栈，含 Prometheus + Grafana）："
-	@echo "  stack-up                 启动全部服务"
-	@echo "  stack-down               停止全部服务"
-	@echo "  stack-logs               持续查看全部服务日志"
 	@echo ""
 	@echo "杂项："
 	@echo "  clean                    删除 .venv、__pycache__、.pytest_cache"
@@ -313,5 +294,4 @@ help:
         lint format typecheck check pre-commit pre-commit-update settings-check \
         docker-build docker-up docker-down docker-logs docker-migrate \
         docker-migrate-downgrade docker-migrate-history \
-        stack-up stack-down stack-logs \
         clean help

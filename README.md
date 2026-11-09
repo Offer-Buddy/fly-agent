@@ -11,7 +11,7 @@
 - **LangGraph** 有状态智能体，支持检查点（checkpointer）、工具调用与人工介入（HITL）
 - **长期记忆**：基于 mem0 + pgvector——按用户进行语义检索，并由缓存支撑
 - **LLM 服务**：支持循环模型降级、指数退避重试以及总超时预算
-- **Langfuse** 追踪覆盖全部 LLM 调用；Prometheus 指标 + Grafana 看板
+- **Langfuse** 追踪覆盖全部 LLM 调用（自建栈，`make langfuse-up` 一条命令拉起）
 - **JWT 认证**与会话管理；基于 slowapi 的限流
 - **Alembic** 迁移；可选的 Redis 缓存层
 - **结构化日志**，每一行都带请求/会话/用户上下文
@@ -22,7 +22,7 @@
 git clone <repo-url> fly-agent && cd fly-agent
 cp .env.example .env.development   # fill in your keys
 make install
-make docker-up                     # starts API + PostgreSQL
+make docker-up                     # starts API + PostgreSQL + Redis
 ```
 
 打开 [http://localhost:8000/docs](http://localhost:8000/docs) 查看交互式 API 文档。
@@ -40,7 +40,7 @@ make docker-up                     # starts API + PostgreSQL
 | [数据库与迁移](docs/database.md) | Schema、Alembic 迁移、pgvector |
 | [LLM 服务](docs/llm-service.md) | 模型、重试、降级、超时预算 |
 | [记忆](docs/memory.md) | mem0 长期记忆、缓存层 |
-| [可观测性](docs/observability.md) | Langfuse、结构化日志、Prometheus、性能分析 |
+| [可观测性](docs/observability.md) | Langfuse 自建追踪、结构化日志、请求耗时、性能分析 |
 | [评测](docs/evaluation.md) | 评测框架、自定义指标、报告 |
 | [Docker](docs/docker.md) | Docker、Compose、完整监控栈 |
 
@@ -81,12 +81,12 @@ evals/             # LLM evaluation framework
 一个基于 FastAPI + LangGraph 构建、可用于生产环境的 AI 智能体后端基础框架。它把原本需要你手工串联的组件打包在一起：有状态对话、长期记忆、工具调用、可观测性、限流与 JWT 认证。
 
 **它与基础的 LangGraph 搭建方式有何不同？**
-LangGraph 的基础快速开始止步于「智能体能在本地跑起来」。本脚手架则补充了 Alembic 迁移、mem0 + pgvector 长期记忆、Langfuse 追踪、Prometheus + Grafana 看板、JWT 会话、slowapi 限流、带每次请求上下文的结构化日志，以及具备循环降级能力的 LLM 服务——这些都是你原本需要单独构建的生产级关注点。
+LangGraph 的基础快速开始止步于「智能体能在本地跑起来」。本脚手架则补充了 Alembic 迁移、mem0 + pgvector 长期记忆、自建 Langfuse 追踪、JWT 会话、slowapi 限流、带每次请求上下文的结构化日志，以及具备循环降级能力的 LLM 服务——这些都是你原本需要单独构建的生产级关注点。
 
 ### 安装与配置
 
 **我需要 Docker 吗？**
-推荐但并非必需。`make docker-up` 会一并启动 API 与 PostgreSQL。若仅做本地环境搭建，请参阅 [docs/getting-started.md](docs/getting-started.md)。
+推荐但并非必需。`make docker-up` 会一并启动 API、PostgreSQL 与 Redis；`make langfuse-up` 另外拉起自建追踪栈（可选）。若仅做本地环境搭建，请参阅 [docs/getting-started.md](docs/getting-started.md)。
 
 **支持哪些 LLM 供应商？**
 任何 LangChain 的 [`init_chat_model`](https://python.langchain.com/docs/how_to/chat_models_universal_init/) 所支持的供应商均可。`app/services/llm/registry.py` 中的 `LLMRegistry` 通过 `init_chat_model` 构建每一个模型，因此像 `gpt-5.6-luna` 这样的裸名称仍会照旧解析为 OpenAI 模型，而 `provider:model` 形式的字符串（例如 `anthropic:claude-opus-4-6`、`ollama:llama3`）则可加入其他任意供应商。安装该供应商对应的 LangChain 集成包——参见 `pyproject.toml` 中的 `anthropic` / `ollama` / `google-genai` 附加依赖——并通过该供应商自己的环境变量设置其 API 密钥（例如 `ANTHROPIC_API_KEY`）。默认模型通过 `.env.development` 中的 `DEFAULT_LLM_MODEL` 配置。

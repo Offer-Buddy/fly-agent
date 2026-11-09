@@ -53,7 +53,6 @@ from psycopg_pool import AsyncConnectionPool
 from app.core.config import settings
 from app.core.langgraph.tools import tools
 from app.core.logging import logger
-from app.core.metrics import llm_inference_duration_seconds
 from app.core.observability import langfuse_callback_handler
 from app.core.prompts import load_system_prompt
 from app.schemas import (
@@ -165,8 +164,7 @@ class LangGraphAgent:
 
         try:
             # 由 LLM 服务负责重试与多模型轮转
-            with llm_inference_duration_seconds.labels(model=model_name).time():
-                response_message = await self.llm_service.call(dump_messages(messages))
+            response_message = await self.llm_service.call(dump_messages(messages))
 
             # 规整结构化内容块（部分供应商会返回 list 形式的 content）
             response_message = process_llm_response(response_message)

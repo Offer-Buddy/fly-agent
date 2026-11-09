@@ -6,12 +6,13 @@
 graph LR
     App["FastAPI App"]
 
-    App -->|"LLM traces\n(every call)"| Langfuse
-    App -->|"HTTP metrics\n(/metrics)"| Prometheus
-    Prometheus --> Grafana
-    App -->|"structured logs\n(stdout)"| Logs["Log aggregator\n(or stdout)"]
+    App -->|"LLM traces\n(every call)"| Langfuse["Langfuse（自建）"]
+    App -->|"structured logs\n(含每请求耗时)"| Logs["JSONL 文件 / stdout"]
     App -->|"slow request profiles\n(DEBUG only)"| Profiles["JSON files\n(PROFILING_DIR)"]
 ```
+
+两条主线：**LLM 内部发生了什么**看 Langfuse，**服务这一层发生了什么**看日志。
+通用的 Prometheus 指标栈已从脚手架移除，理由见「请求级观测」一节。
 
 ---
 
@@ -24,20 +25,45 @@ graph LR
 - 单次调用和单个会话的延迟
 - 模型名、temperature 及其他参数
 
-**配置：**
+**配置（自建，默认形态）：**
+
+```bash
+make langfuse-up      # 起 Web + Worker + Postgres + ClickHouse + Redis + MinIO
+# 打开 http://localhost:3010，首屏建组织与项目，在项目设置里复制 pk-/sk-
+```
 
 ```bash
 LANGFUSE_TRACING_ENABLED=true
 LANGFUSE_PUBLIC_KEY=pk-...
 LANGFUSE_SECRET_KEY=sk-...
-LANGFUSE_HOST=https://cloud.langfuse.com   # or your self-hosted URL
+LANGFUSE_HOST=http://localhost:3010        # 宿主机直跑（make dev）
 ```
 
-**本地开发时关闭：**
+**容器内跑 app 时不用改这行。** `docker-compose.yml` 会把 `LANGFUSE_HOST` 覆盖成
+`http://langfuse-web:3000`——容器里的 `localhost` 指 app 自己，必须走服务名。
+两个 compose 项目共用一个网络 `fly-agent-net`（主栈创建，Langfuse 栈以 external 方式加入），
+所以 `langfuse-web` 这个名字在 app 容器里可解析。
+
+| 场景 | app 在哪 | Langfuse 地址 |
+| --- | --- | --- |
+| 本地开发（推荐） | `make dev` 宿主机 | `http://localhost:3010` |
+| 容器编排 | `make docker-up` | `http://langfuse-web:3000`（自动覆盖） |
+| 云端 | 任意 | `https://cloud.langfuse.com` |
+
+**端口占用（自建全套）：** Web `3010`、Worker `3030`、Postgres `5433`、Redis `6380`、
+ClickHouse `8123`/`9300`、MinIO `9092`（控制台 `9093`）。全部只绑本机或已避开主栈端口。
+
+**首次启动要等 1~2 分钟**建表；内存占用约 1.5~2GB。只想先看效果，把 `LANGFUSE_HOST`
+指向云端 Hobby 即可（免费额度 5 万 units/月）。
+
+**临时关闭：**
 
 ```bash
 LANGFUSE_TRACING_ENABLED=false
 ```
+
+`LANGFUSE_HOST` 指错或 key 不匹配时，`langfuse_init()` 只记一条
+`langfuse_auth_failure` 告警，不会阻断服务启动——追踪是旁路能力。
 
 **会话与用户归因：** LangGraph 侧只认 metadata 里三个带前缀的键——`langfuse_session_id`、`langfuse_user_id`、`langfuse_tags`。写成 `session_id` 会被当作普通元数据存着，界面上「会话」页与按用户统计永远是空的。请求入口用 `trace_attributes()` 包一次即可，图内所有节点自动继承：
 
@@ -55,7 +81,8 @@ make trace-report HOURS=24    # 把最近一段时间的量、成本、延迟聚
 
 命令行脚本跑完就退出，不调 `flush()` 会丢掉缓冲区里的追踪——`observability.flush()` 就是给脚本用的。
 
-**自建：** `make langfuse-up` 起全套（Web + Worker + Postgres + ClickHouse + Redis + MinIO，界面在 <http://localhost:3010>，端口已避让开发栈），`make langfuse-down` 收工。数据敏感、不能出内网时才值得自建，日常开发直接用云端免费额度即可。
+**运维：** `make langfuse-down` 停栈，`make langfuse-logs` 跟 Web/Worker 日志。
+清空全部追踪数据用 `docker compose -f docker-compose.langfuse.yml down -v`（连数据卷一起删，慎用）。
 
 追踪数据同时也是[评测框架](evaluation.md)的数据源。
 
@@ -69,6 +96,10 @@ make trace-report HOURS=24    # 把最近一段时间的量、成本、延迟聚
 - **生产环境**：JSON（管道给你的日志聚合器）
 
 只要可用，每行日志都会自动带上 `request_id`、`session_id` 和 `user_id` —— 由 `LoggingContextMiddleware` 绑定。
+
+每个请求结束时该中间件还会打一条 `http_request_completed`，带 `method`、`path`、
+`status_code` 与 `duration_ms`。这是原来 Prometheus histogram 的位置，现在它是唯一的
+逐请求耗时来源，慢请求排查从这里开始。
 
 ### 日志格式约定
 
@@ -97,36 +128,48 @@ logger.error("something failed", error=str(e))          # use logger.exception f
 
 ---
 
-## Prometheus 指标
+## 请求级观测（日志承担）
 
-指标暴露在 `GET /metrics`，由 Prometheus 抓取。
+原 Prometheus + Grafana + cadvisor 三件套已从脚手架移除，`/metrics` 端点不再暴露。理由：
 
-| 指标 | 类型 | 说明 |
-| --- | --- | --- |
-| `http_requests_total` | Counter | 按方法、接口、状态码统计的请求数 |
-| `http_request_duration_seconds` | Histogram | 按方法、接口统计的请求延迟 |
-| `llm_inference_duration_seconds` | Histogram | 按模型统计的 LLM 调用延迟 |
-| `llm_stream_duration_seconds` | Histogram | 按模型统计的流式调用延迟 |
-| `session_names_generated_total` | Counter | 会话标题生成次数，按成功 / 失败区分 |
-| `starlette_requests_total` 等 `starlette_*` | — | 框架中间件自带（QPS、进行中请求） |
-| `db_connections` | Gauge | 已定义，**但没有任何地方打点，恒为 0** |
-| `orders_processed_total` | Counter | 模板遗留，**当前无打点，Prometheus 里查不到** |
+- **LLM 侧的延迟/成本/调用链由 Langfuse 覆盖**，比通用指标更贴近 Agent 排障
+- **cadvisor 在 Docker Desktop（Windows/macOS）拿不到有意义的容器数据**，等于白跑一个容器
+- 三个常驻容器约 300–500MB 内存，对本地开发是持续成本
 
-### 看板
+替代方案是三条现成的东西：
 
-`grafana/` 下两块看板，随容器启动自动导入：
-
-| 文件 | 看什么 |
+| 想知道什么 | 用什么 |
 | --- | --- |
-| `dashboards/json/service_overview.json` | QPS、5xx 错误率、处理中请求、HTTP P95、LLM 流式/非流式 P95、会话标题生成 |
-| `dashboards/json/llm_latency.json` | LLM 推理与流式的 P95、均值、调用量 |
+| 每个请求多快、什么状态码 | `http_request_completed` 日志（`method` / `path` / `status_code` / `duration_ms`） |
+| 慢请求卡在哪个函数 | `ProfilingMiddleware` 落盘的调用树（见下节） |
+| 某次 LLM 调用花了多少 token | Langfuse 的 trace 详情 |
+| 容器 CPU / 内存 | `docker stats` 现查 |
 
-数据源也是文件化的（`grafana/datasources/datasource.yml`，uid 固定为 `prometheus`）。
-**只挂看板不挂数据源，面板会显示 “Datasource prometheus was not found”，六块图全空**——这个现象很像「指标没上报」，实际只是数据源没配，排查时先看这一步。
+`LoggingContextMiddleware` 在请求结束时打一条：
 
-用 `make stack-up ENV=development` 启动整套服务，[http://localhost:3000](http://localhost:3000) 访问（admin/admin）；
-`make stack-up` 会一起拉起 Prometheus（9090）、Grafana（3000）与 cadvisor（8080）。
-cadvisor 只对 Linux 宿主有效，Docker Desktop 下拿不到容器数据，可整段删掉。
+```json
+{"message": "http_request_completed", "method": "POST", "path": "/api/v1/chatbot/chat",
+ "status_code": 200, "duration_ms": 1842.37, "request_id": "...", "session_id": "..."}
+```
+
+捞最慢的请求：
+
+```bash
+cat logs/development-*.jsonl \
+  | jq -r 'select(.message=="http_request_completed") | "\(.duration_ms)\t\(.method) \(.path)\t\(.status_code)"' \
+  | sort -rn | head -20
+```
+
+按状态码数错误率：
+
+```bash
+cat logs/development-*.jsonl \
+  | jq -r 'select(.message=="http_request_completed" and .status_code>=500) | .path' \
+  | sort | uniq -c | sort -rn
+```
+
+要接回指标栈时，装 `prometheus-client` 与 `starlette-prometheus`、在 `main.py` 恢复
+`setup_metrics(app)`，再把 Prometheus 服务加回 compose 即可——中间件位置和生命周期钩子都还在。
 
 ---
 

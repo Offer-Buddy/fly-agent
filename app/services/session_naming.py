@@ -18,7 +18,6 @@ from sqlmodel import (
 
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.metrics import session_names_generated_total
 from app.core.prompts import SESSION_TITLE_PROMPT
 from app.models.session import Session as ChatSession
 from app.schemas.chat import SessionTitle
@@ -86,11 +85,9 @@ async def _persist_session_name(session_id: str, user_message: str) -> None:
             temperature=0.3,
         )
         await database_service.update_session_name(session_id, result.title)
-        session_names_generated_total.labels(status="success").inc()
         logger.info("session_name_generated", session_id=session_id, name=result.title)
     except Exception:
-        # 命名失败不影响对话，只打点 + 记日志
-        session_names_generated_total.labels(status="error").inc()
+        # 命名失败不影响对话，只记日志
         logger.exception("session_name_generation_failed", session_id=session_id)
 
 

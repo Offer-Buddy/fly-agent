@@ -4,40 +4,48 @@
 
 ```mermaid
 graph TB
-    subgraph stack["Full stack (make stack-up)"]
-        app["app\n(FastAPI, port 8000)"]
-        db["db\n(PostgreSQL + pgvector, port 5432)"]
-        redis["redis\n(Redis, port 6379)"]
-        prometheus["prometheus\n(port 9090)"]
-        grafana["grafana\n(port 3000)"]
-        cadvisor["cadvisor\n(container metrics, port 8080)"]
+    subgraph stack["开发栈（make docker-up）"]
+        app["app\n(FastAPI, 8000)"]
+        db["db\n(PostgreSQL + pgvector, 5432)"]
+        redis["redis\n(Redis, 6379)"]
+    end
+
+    subgraph lf["Langfuse 栈（make langfuse-up）"]
+        web["langfuse-web\n(3010)"]
+        worker["langfuse-worker"]
+        lfpg["postgres\n(5433)"]
+        ch["clickhouse\n(8123 / 9300)"]
+        lfredis["redis\n(6380)"]
+        minio["minio\n(9092 / 9093)"]
     end
 
     app --> db
-    app -.->|"optional cache\n(set REDIS_HOST=redis)"| redis
-    prometheus -->|"scrapes /metrics"| app
-    prometheus -->|"scrapes container stats"| cadvisor
-    grafana --> prometheus
+    app -.->|"可选缓存\n(set REDIS_HOST=redis)"| redis
+    app -->|"traces\nhttp://langfuse-web:3000"| web
+    web --> lfpg
+    web --> ch
+    web --> lfredis
+    web --> minio
+    worker --> lfpg
 ```
+
+两套栈通过共享网络 `fly-agent-net` 互通：开发栈创建它，Langfuse 栈以 external 方式加入。
+所以 app 容器能用服务名 `langfuse-web` 访问追踪服务，宿主机侧浏览器走 `localhost:3010`。
 
 Redis 始终会启动，但只有在 `.env` 文件中设置了 `REDIS_HOST=redis` 时，应用才会真正使用它。未设置时，应用回退到内存缓存。
 
+> **监控栈已移除**：Prometheus / Grafana / cadvisor 不再属于本编排。逐请求耗时看
+> `http_request_completed` 日志，LLM 侧看 Langfuse，容器资源用 `docker stats`。
+> 详见[可观测性](observability.md)。
+
 ## 常用命令
 
-### 仅启动 API + 数据库（开发时最常用）
+### 启动 API + 数据库 + Redis（开发时最常用）
 
 ```bash
 make docker-up ENV=development     # start
 make docker-down ENV=development   # stop
 make docker-logs ENV=development   # tail logs
-```
-
-### 完整技术栈（包含 Prometheus + Grafana）
-
-```bash
-make stack-up ENV=development      # start everything
-make stack-down ENV=development    # stop everything
-make stack-logs ENV=development    # tail all service logs
 ```
 
 ### 构建自定义镜像
@@ -68,17 +76,19 @@ cp .env.example .env.staging
 cp .env.example .env.production
 ```
 
-`docker-up` 和 `stack-up` 命令通过 `--env-file` 把环境变量文件传给 Docker Compose。Docker 环境变量文件中务必设置 `POSTGRES_HOST=db`（而不是 `localhost`）—— Compose 网络内该服务的名称就是 `db`。
+`make docker-up` 命令通过 `--env-file` 把环境变量文件传给 Docker Compose。Docker 环境变量文件中务必设置 `POSTGRES_HOST=db`（而不是 `localhost`）—— Compose 网络内该服务的名称就是 `db`。`LANGFUSE_HOST` 无需手改，编排文件已覆盖为 `http://langfuse-web:3000`。
 
-## Grafana
+## Langfuse（自建追踪栈）
 
-执行 `make stack-up` 后，Grafana 可通过 [http://localhost:3000](http://localhost:3000) 访问。
+```bash
+make langfuse-up ENV=development    # 起 Web + Worker + Postgres + ClickHouse + Redis + MinIO
+make langfuse-logs                  # 跟 web / worker 日志
+make langfuse-down                  # 停栈（数据卷保留）
+```
 
-默认凭证：`admin` / `admin`
+启动后访问 [http://localhost:3010](http://localhost:3010)，首屏建组织与项目，在项目设置里
+取 `pk-` / `sk-` 填进 `.env.development` 的 `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`，
+再把 `LANGFUSE_TRACING_ENABLED` 置为 `true`。
 
-预置的看板（位于 `grafana/`）：
-
-- API 性能（请求速率、延迟、错误率）
-- 限流统计
-- 数据库连接池健康状态
-- 系统资源使用情况
+首次启动需要 1~2 分钟建表；常驻内存约 1.5~2GB。端口全部避让开发栈（见上方拓扑图）。
+清空数据用 `docker compose -f docker-compose.langfuse.yml down -v`。

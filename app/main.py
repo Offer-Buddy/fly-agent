@@ -35,10 +35,8 @@ from app.core.cache import cache_service
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import logger
-from app.core.metrics import setup_metrics
 from app.core.middleware import (
     LoggingContextMiddleware,
-    MetricsMiddleware,
     ProfilingMiddleware,
 )
 from app.core.observability import langfuse_init
@@ -103,14 +101,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 注册 Prometheus 采集中间件与 /metrics 端点
-setup_metrics(app)
-
-# 日志上下文中间件：要先于其他中间件注册，才能覆盖后续所有日志
+# 日志上下文中间件：要先于其他中间件注册，才能覆盖后续所有日志；
+# 它同时负责记每条请求的耗时（http_request_completed）
 app.add_middleware(LoggingContextMiddleware)
-
-# 自定义请求指标中间件
-app.add_middleware(MetricsMiddleware)
 
 # 性能剖析中间件：仅 DEBUG 开启，慢请求会把报告写到 PROFILING_DIR
 if settings.DEBUG:
