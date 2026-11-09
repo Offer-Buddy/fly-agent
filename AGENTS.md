@@ -1,8 +1,8 @@
-# AI Agent Development Guide
+# AI Agent 开发指南
 
-This document provides essential guidelines for AI agents working on this LangGraph FastAPI Agent project.
+本文档为参与本 LangGraph FastAPI Agent 项目的 AI 编码助手提供必备约定。
 
-## Quick Commands
+## 常用命令
 
 ```bash
 make install              # Install deps (uv sync) + pre-commit hooks
@@ -18,10 +18,10 @@ make docker-up            # Docker: API + DB (ENV=development by default)
 make stack-up ENV=development  # Full stack: API + DB + Prometheus + Grafana
 ```
 
-> All server/DB/Docker targets accept `ENV=development|staging|production|test`.
-> Run `make help` for the full list of targets.
+> 所有 server/DB/Docker 目标均接受 `ENV=development|staging|production|test`。
+> 执行 `make help` 查看完整目标列表。
 
-## Project Structure
+## 项目结构
 
 ```
 app/
@@ -44,180 +44,180 @@ evals/             # LLM evaluation framework (Langfuse-based)
 scripts/           # Environment setup, Docker build scripts
 ```
 
-## Project Overview
+## 项目概览
 
-This is a production-ready AI agent application built with:
-- **LangGraph** for stateful, multi-step AI agent workflows
-- **FastAPI** for high-performance async REST API endpoints
-- **Langfuse** for LLM observability and tracing
-- **PostgreSQL + pgvector** for long-term memory storage (mem0ai)
-- **JWT authentication** with session management
-- **Prometheus + Grafana** for monitoring
+这是一个可投入生产的 AI Agent 应用，技术栈如下：
+- **LangGraph**：用于有状态、多步骤的 AI Agent 工作流
+- **FastAPI**：用于高性能异步 REST API 端点
+- **Langfuse**：用于 LLM 可观测性与链路追踪
+- **PostgreSQL + pgvector**：用于长期记忆存储（mem0ai）
+- **JWT 认证**：配合会话管理
+- **Prometheus + Grafana**：用于监控
 
-## Quick Reference: Critical Rules
+## 速查：关键规则
 
-### Import Rules
-- **All imports MUST be at the top of the file** - never add imports inside functions or classes
+### 导入规则
+- **所有 import 必须置于文件顶部**——禁止在函数或类内部添加 import
 
-### Logging Rules
-- Use **structlog** for all logging
-- Log messages must be **lowercase_with_underscores** (e.g., `"user_login_successful"`)
-- **NO f-strings in structlog events** - pass variables as kwargs
-- Use `logger.exception()` instead of `logger.error()` to preserve tracebacks
-- Example: `logger.info("chat_request_received", session_id=session.id, message_count=len(messages))`
+### 日志规则
+- 所有日志必须使用 **structlog**
+- 日志事件名必须为 **小写加下划线**（lowercase_with_underscores）格式，例如 `"user_login_successful"`
+- **禁止在 structlog 事件中使用 f-string**——变量必须作为 kwargs 传入
+- 使用 `logger.exception()` 而非 `logger.error()`，以保留 traceback
+- 示例：`logger.info("chat_request_received", session_id=session.id, message_count=len(messages))`
 
-### Retry Rules
-- **Always use tenacity library** for retry logic
-- Configure with exponential backoff
-- Example: `@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))`
+### 重试规则
+- **必须使用 tenacity 库**实现重试逻辑
+- 按指数退避进行配置
+- 示例：`@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))`
 
-### Output Rules
-- **Always enable rich library** for formatted console outputs
-- Use rich for progress bars, tables, panels, and formatted text
+### 输出规则
+- **必须启用 rich 库**输出格式化控制台内容
+- 使用 rich 渲染进度条、表格、面板与格式化文本
 
-### Caching Rules
-- **Only cache successful responses**, never cache errors
-- Use appropriate cache TTL based on data volatility
+### 缓存规则
+- **只缓存成功响应**，禁止缓存错误
+- 依据数据易变程度设置合适的缓存 TTL
 
-### FastAPI Rules
-- All routes must have rate limiting decorators
-- Use dependency injection for services, database connections, and auth
-- All database operations must be async
+### FastAPI 规则
+- 所有路由必须带限流装饰器
+- 服务、数据库连接与认证必须使用依赖注入
+- 所有数据库操作必须为异步
 
-## Code Style Conventions
+## 代码风格约定
 
 ### Python/FastAPI
-- Use `async def` for asynchronous operations
-- Use type hints for all function signatures
-- Prefer Pydantic models over raw dictionaries
-- Use functional, declarative programming; avoid classes except for services and agents
-- File naming: lowercase with underscores (e.g., `user_routes.py`)
-- Use the RORO pattern (Receive an Object, Return an Object)
+- 异步操作使用 `async def`
+- 所有函数签名必须带类型提示
+- 优先使用 Pydantic 模型，而非原始字典
+- 采用函数式、声明式编程；除服务与 Agent 外避免使用类
+- 文件命名：小写加下划线（例如 `user_routes.py`）
+- 使用 RORO 模式（Receive an Object, Return an Object）
 
-### Error Handling
-- Handle errors at the beginning of functions
-- Use early returns for error conditions
-- Place the happy path last in the function
-- Use guard clauses for preconditions
-- Use `HTTPException` for expected errors with appropriate status codes
+### 错误处理
+- 在函数开头处理错误
+- 错误分支使用提前返回（early return）
+- 将正常路径放在函数末尾
+- 前置条件使用守卫子句（guard clause）
+- 预期错误使用 `HTTPException`，并设置合适的状态码
 
-## LangGraph & LangChain Patterns
+## LangGraph 与 LangChain 模式
 
-### Graph Structure
-- Use `StateGraph` for building AI agent workflows
-- Define clear state schemas using Pydantic models (see `app/schemas/graph.py`)
-- Use `CompiledStateGraph` for production workflows
-- Implement `AsyncPostgresSaver` for checkpointing and persistence
-- Use `Command` for controlling graph flow between nodes
+### 图结构
+- 使用 `StateGraph` 构建 AI Agent 工作流
+- 使用 Pydantic 模型定义清晰的状态 schema（参见 `app/schemas/graph.py`）
+- 生产工作流使用 `CompiledStateGraph`
+- 实现 `AsyncPostgresSaver` 以支撑检查点（checkpointer）与持久化
+- 使用 `Command` 控制节点之间的图流转
 
-### Tracing
-- Use LangChain's `CallbackHandler` from Langfuse for tracing all LLM calls
-- All LLM operations must have Langfuse tracing enabled
+### 链路追踪
+- 使用 Langfuse 提供的 LangChain `CallbackHandler` 追踪所有 LLM 调用
+- 所有 LLM 操作必须启用 Langfuse 追踪
 
-### Memory (mem0ai)
-- Use `AsyncMemory` for semantic memory storage
-- Store memories per user_id for personalized experiences
-- Use async methods: `add()`, `get()`, `search()`, `delete()`
+### 记忆（mem0ai）
+- 使用 `AsyncMemory` 进行语义记忆存储
+- 按 user_id 分用户存储记忆，以实现个性化体验
+- 使用异步方法：`add()`、`get()`、`search()`、`delete()`
 
-## Authentication & Security
+## 认证与安全
 
-- Use JWT tokens for authentication
-- Implement session-based user management (see `app/api/v1/auth.py`)
-- Use `get_current_session` dependency for protected endpoints
-- Store sensitive data in environment variables
-- Validate all user inputs with Pydantic models
+- 使用 JWT token 做认证
+- 实现基于会话的用户管理（参见 `app/api/v1/auth.py`）
+- 受保护端点必须使用 `get_current_session` 依赖
+- 敏感数据必须存放于环境变量
+- 所有用户输入必须用 Pydantic 模型校验
 
-## Database Operations
+## 数据库操作
 
-- Use SQLModel for ORM models (combines SQLAlchemy + Pydantic)
-- Define models in `app/models/` directory
-- Use async database operations with asyncpg
-- Use LangGraph's AsyncPostgresSaver for agent checkpointing
+- ORM 模型使用 SQLModel（融合 SQLAlchemy + Pydantic）
+- 在 `app/models/` 目录下定义模型
+- 使用 asyncpg 执行异步数据库操作
+- 使用 LangGraph 的 AsyncPostgresSaver 为 Agent 做检查点（checkpointer）
 
-## Performance Guidelines
+## 性能规范
 
-- Minimize blocking I/O operations
-- Use async for all database and external API calls
-- Implement caching for frequently accessed data
-- Use connection pooling for database connections
-- Optimize LLM calls with streaming responses
+- 尽量减少阻塞式 I/O 操作
+- 所有数据库与外部 API 调用必须异步
+- 对高频访问数据实施缓存
+- 数据库连接使用连接池
+- 用流式响应优化 LLM 调用
 
-## Observability
+## 可观测性
 
-- Integrate Langfuse for LLM tracing on all agent operations
-- Export Prometheus metrics for API performance
-- Use structured logging with context binding (request_id, session_id, user_id)
-- Track LLM inference duration, token usage, and costs
+- 在所有 Agent 操作中接入 Langfuse 做 LLM 追踪
+- 导出 Prometheus 指标以观测 API 性能
+- 使用带上下文绑定（request_id、session_id、user_id）的结构化日志
+- 跟踪 LLM 推理耗时、token 用量与成本
 
-## Testing & Evaluation
+## 测试与评测
 
-- Implement metric-based evaluations for LLM outputs (see `evals/` directory)
-- Create custom evaluation metrics as markdown files in `evals/metrics/prompts/`
-- Use Langfuse traces for evaluation data sources
-- Generate JSON reports with success rates
+- 为 LLM 输出实现基于指标的评测（参见 `evals/` 目录）
+- 在 `evals/metrics/prompts/` 中以 markdown 文件形式创建自定义评测指标
+- 使用 Langfuse trace 作为评测数据源
+- 生成含成功率的 JSON 报告
 
-## Configuration Management
+## 配置管理
 
-- Use environment-specific configuration files (`.env.development`, `.env.staging`, `.env.production`)
-- Use Pydantic Settings for type-safe configuration (see `app/core/config.py`)
-- Never hardcode secrets or API keys
+- 使用区分环境的配置文件（`.env.development`、`.env.staging`、`.env.production`）
+- 使用 Pydantic Settings 实现类型安全配置（参见 `app/core/config.py`）
+- 禁止硬编码密钥或 API key
 
-## Key Dependencies
+## 关键依赖
 
-- **FastAPI** - Web framework
-- **LangGraph** - Agent workflow orchestration
-- **LangChain** - LLM abstraction and tools
-- **Langfuse** - LLM observability and tracing
-- **Pydantic v2** - Data validation and settings
-- **structlog** - Structured logging
-- **mem0ai** - Long-term memory management
-- **PostgreSQL + pgvector** - Database and vector storage
-- **SQLModel** - ORM for database models
-- **tenacity** - Retry logic
-- **rich** - Terminal formatting
-- **slowapi** - Rate limiting
-- **prometheus-client** - Metrics collection
+- **FastAPI**：Web 框架
+- **LangGraph**：Agent 工作流编排
+- **LangChain**：LLM 抽象与工具
+- **Langfuse**：LLM 可观测性与链路追踪
+- **Pydantic v2**：数据校验与配置
+- **structlog**：结构化日志
+- **mem0ai**：长期记忆管理
+- **PostgreSQL + pgvector**：数据库与向量存储
+- **SQLModel**：数据库模型 ORM
+- **tenacity**：重试逻辑
+- **rich**：终端格式化
+- **slowapi**：限流
+- **prometheus-client**：指标采集
 
-## 10 Commandments for This Project
+## 本项目的 10 条戒律
 
-1. All routes must have rate limiting decorators
-2. All LLM operations must have Langfuse tracing
-3. All async operations must have proper error handling
-4. All logs must follow structured logging format with lowercase_underscore event names
-5. All retries must use tenacity library
-6. All console outputs should use rich formatting
-7. All caching should only store successful responses
-8. All imports must be at the top of files
-9. All database operations must be async
-10. All endpoints must have proper type hints and Pydantic models
-11. All code must pass `make typecheck` (pyright standard mode)
+1. 所有路由必须带限流装饰器
+2. 所有 LLM 操作必须接入 Langfuse 追踪
+3. 所有异步操作必须妥善处理错误
+4. 所有日志必须遵循结构化日志规范，事件名使用小写下划线
+5. 所有重试必须使用 tenacity 库
+6. 所有控制台输出应使用 rich 格式化
+7. 所有缓存只允许存放成功响应
+8. 所有 import 必须置于文件顶部
+9. 所有数据库操作必须为异步
+10. 所有端点必须带完整类型提示与 Pydantic 模型
+11. 所有代码必须通过 `make typecheck`（pyright standard 模式）
 
-## Common Pitfalls to Avoid
+## 常见陷阱
 
-- ❌ Using f-strings in structlog events
-- ❌ Adding imports inside functions
-- ❌ Forgetting rate limiting decorators on routes
-- ❌ Missing Langfuse tracing on LLM calls
-- ❌ Caching error responses
-- ❌ Using `logger.error()` instead of `logger.exception()` for exceptions
-- ❌ Blocking I/O operations without async
-- ❌ Hardcoding secrets or API keys
-- ❌ Missing type hints on function signatures
+- ❌ 在 structlog 事件中使用 f-string
+- ❌ 在函数内部添加 import
+- ❌ 路由遗漏限流装饰器
+- ❌ LLM 调用缺失 Langfuse 追踪
+- ❌ 缓存错误响应
+- ❌ 异常处理使用 `logger.error()` 而非 `logger.exception()`
+- ❌ 未使用异步而阻塞 I/O
+- ❌ 硬编码密钥或 API key
+- ❌ 函数签名缺失类型提示
 
-## When Making Changes
+## 修改代码时
 
-Before modifying code:
-1. Read the existing implementation first
-2. Check for related patterns in the codebase
-3. Ensure consistency with existing code style
-4. Add appropriate logging with structured format
-5. Include error handling with early returns
-6. Add type hints and Pydantic models
-7. Verify Langfuse tracing is enabled for LLM calls
+修改代码之前：
+1. 先阅读现有实现
+2. 检查代码库中是否存在同类模式
+3. 确保与既有代码风格一致
+4. 添加结构化格式的日志
+5. 包含带提前返回的错误处理
+6. 添加类型提示与 Pydantic 模型
+7. 确认 LLM 调用已启用 Langfuse 追踪
 
-## References
+## 参考资料
 
-- LangGraph Documentation: https://langchain-ai.github.io/langgraph/
-- LangChain Documentation: https://python.langchain.com/docs/
-- FastAPI Documentation: https://fastapi.tiangolo.com/
-- Langfuse Documentation: https://langfuse.com/docs
+- LangGraph 文档：https://langchain-ai.github.io/langgraph/
+- LangChain 文档：https://python.langchain.com/docs/
+- FastAPI 文档：https://fastapi.tiangolo.com/
+- Langfuse 文档：https://langfuse.com/docs

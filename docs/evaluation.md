@@ -1,8 +1,8 @@
-# Evaluation
+# 评测
 
-The template includes a metric-based evaluation framework that fetches traces from Langfuse, scores them with LLM judges, and generates JSON reports.
+本项目内置一套基于指标的评测框架：从 Langfuse 拉取链路追踪数据，用 LLM 打分器评分，并生成 JSON 报告。
 
-## Running evaluations
+## 运行评测
 
 ```bash
 make eval                        # interactive mode — prompts for settings
@@ -11,7 +11,7 @@ make eval-no-report              # runs but skips report generation
 make eval ENV=production         # run against production traces
 ```
 
-## How it works
+## 工作流程
 
 ```mermaid
 flowchart LR
@@ -21,23 +21,23 @@ flowchart LR
     Score --> Report["JSON report\nevals/reports/"]
 ```
 
-1. **Fetch traces** — pulls recent LLM traces from Langfuse (configured via `LANGFUSE_*` env vars)
-2. **Score** — for each trace × metric combination, an LLM judge evaluates the output and returns pass/fail
-3. **Report** — a JSON report with aggregated stats and per-trace results is saved to `evals/reports/`
+1. **拉取链路追踪** —— 从 Langfuse 获取近期的 LLM 追踪数据（通过 `LANGFUSE_*` 环境变量配置）
+2. **评分** —— 对每个「追踪 × 指标」组合，由 LLM 打分器评估输出并返回 pass/fail
+3. **生成报告** —— 包含汇总统计和逐条追踪结果的 JSON 报告会保存到 `evals/reports/`
 
-## Built-in metrics
+## 内置指标
 
-| Metric | What it checks |
+| 指标 | 检查内容 |
 | --- | --- |
-| `helpfulness` | Did the response actually help the user? |
-| `conciseness` | Was the response appropriately concise? |
-| `hallucination` | Did the response contain made-up facts? |
-| `relevancy` | Was the response on-topic? |
-| `toxicity` | Did the response contain harmful content? |
+| `helpfulness` | 响应是否真正帮到了用户？ |
+| `conciseness` | 响应是否足够简洁？ |
+| `hallucination` | 响应中是否包含编造的事实？ |
+| `relevancy` | 响应是否切题？ |
+| `toxicity` | 响应中是否包含有害内容？ |
 
-## Adding a custom metric
+## 添加自定义指标
 
-1. Create a markdown file in `evals/metrics/prompts/`:
+1. 在 `evals/metrics/prompts/` 中创建一个 Markdown 文件：
 
 ```markdown
 # My Metric
@@ -49,11 +49,11 @@ Evaluate whether the assistant response...
 Return "pass" if... Return "fail" if...
 ```
 
-2. The evaluator auto-discovers and applies all `.md` files in that directory.
+2. 评测器会自动发现并应用该目录下的所有 `.md` 文件。
 
-## Report format
+## 报告格式
 
-Reports are saved to `evals/reports/evaluation_report_YYYYMMDD_HHMMSS.json`:
+报告保存到 `evals/reports/evaluation_report_YYYYMMDD_HHMMSS.json`：
 
 ```json
 {
@@ -70,9 +70,9 @@ Reports are saved to `evals/reports/evaluation_report_YYYYMMDD_HHMMSS.json`:
 }
 ```
 
-## Eval LLM configuration
+## 评测用 LLM 配置
 
-The evaluator uses a separate LLM config so you can use a different (cheaper) model for judging:
+评测器使用独立的 LLM 配置，因此你可以换用另一个（更便宜的）模型来做打分：
 
 ```bash
 EVALUATION_LLM=gpt-5

@@ -1,4 +1,4 @@
-"""This file contains the utilities for the application."""
+"""工具函数出口：图相关辅助函数统一从这里导出。"""
 
 from .graph import (
     dump_messages,

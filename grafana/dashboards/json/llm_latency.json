@@ -19,7 +19,7 @@
             "refId": "A"
           }
         ],
-        "datasource": "Prometheus",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 }
       },
       {
@@ -32,7 +32,7 @@
             "refId": "B"
           }
         ],
-        "datasource": "Prometheus",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "gridPos": { "x": 0, "y": 9, "w": 24, "h": 9 }
       },
       {
@@ -45,7 +45,7 @@
             "refId": "C"
           }
         ],
-        "datasource": "Prometheus",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "gridPos": { "x": 0, "y": 18, "w": 24, "h": 9 }
       },
       {
@@ -58,7 +58,7 @@
             "refId": "D"
           }
         ],
-        "datasource": "Prometheus",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
         "gridPos": { "x": 0, "y": 27, "w": 24, "h": 9 }
       }
     ]

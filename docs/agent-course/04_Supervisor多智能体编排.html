@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supervisor 多智能体编排</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232f6df6'/%3E%3Ctext x='16' y='23' font-family='sans-serif' font-size='18' font-weight='700' fill='%23fff' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#f4f6fa; --panel:#ffffff; --ink:#1b2330; --sub:#5b6b7f; --faint:#8b9aab;
+    --line:#e3e8ef; --line-soft:#eef1f6;
+    --accent:#2f6df6; --accent-soft:#eaf0ff; --accent-deep:#1d4ed8;
+    --ok:#0f7a52; --ok-soft:#e8f6ef;
+    --warn:#9a6200; --warn-soft:#fff6e6;
+    --bad:#b8382c; --bad-soft:#fdecea;
+    --purple:#6853b8; --purple-soft:#f3f0fb;
+    --mono:"JetBrains Mono","Cascadia Code",Consolas,"SF Mono",Menlo,monospace;
+    --top-h:58px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;scroll-padding-top:120px}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.82 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent-deep);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  .topbar{
+    position:sticky;top:0;z-index:60;background:rgba(255,255,255,.93);
+    backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line);
+  }
+  .topbar .bar{max-width:1200px;margin:0 auto;padding:0 48px;height:var(--top-h);display:flex;align-items:center;gap:16px}
+  .brand{display:flex;align-items:center;gap:10px;white-space:nowrap}
+  .brand .mark{
+    width:28px;height:28px;border-radius:9px;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-size:13px;font-weight:800
+  }
+  .brand b{font-size:14.5px;letter-spacing:-.2px}
+  .brand em{font-style:normal;color:var(--faint);font-size:12px;border-left:1px solid var(--line);padding-left:10px}
+  .btn-print{
+    margin-left:auto;border:1px solid var(--line);background:#fff;color:var(--sub);border-radius:8px;
+    padding:6px 13px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap
+  }
+  .btn-print:hover{border-color:var(--accent);color:var(--accent-deep)}
+
+  .shell{max-width:1200px;margin:0 auto}
+  .doc{padding:34px 48px 80px;max-width:1200px;min-width:0}
+
+  .navstrip{max-width:1200px;margin:0 auto;padding:0 48px;position:relative}
+  .navstrip::before,.navstrip::after{
+    content:"";position:absolute;top:0;bottom:0;width:34px;pointer-events:none;
+    opacity:0;transition:opacity .18s;z-index:2
+  }
+  .navstrip::before{left:0;background:linear-gradient(to right,#fff,rgba(255,255,255,0))}
+  .navstrip::after{right:0;background:linear-gradient(to left,#fff,rgba(255,255,255,0))}
+  .navstrip.fade-l::before,.navstrip.fade-r::after{opacity:1}
+  .topnav{display:flex;gap:19px;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+  .topnav::-webkit-scrollbar{display:none}
+  .topnav a{
+    flex:none;font-size:13.2px;color:var(--sub);white-space:nowrap;line-height:1.5;
+    padding:9px 1px 8px;border-bottom:2px solid transparent
+  }
+  .topnav a .n{font-family:var(--mono);font-size:10.5px;color:#b3c0d1;margin-right:4px}
+  .topnav a:hover{color:var(--ink);text-decoration:none}
+  .topnav a.on{color:var(--accent-deep);border-bottom-color:var(--accent);font-weight:600}
+  .topnav a.on .n{color:var(--accent)}
+
+  p{margin:0 0 14px}
+  strong{font-weight:600;color:#0f172a}
+  ul,ol{margin:0 0 16px;padding-left:22px}
+  li{margin:0 0 7px}
+  li::marker{color:var(--faint)}
+  code{font-family:var(--mono);font-size:13px;background:#eef2f8;border-radius:4px;padding:1px 5px}
+
+  .goal h1{font-size:26px;line-height:1.35;margin:0 0 8px;letter-spacing:-.5px}
+  .goal .sub{color:var(--sub);font-size:14.5px;margin:0 0 18px}
+  .goals{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin:0 0 6px}
+  .goals div{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 12px;
+    font-size:12.4px;line-height:1.55;color:var(--ink)
+  }
+  .goals div b{display:block;font-size:11px;color:var(--accent);font-weight:700;margin-bottom:5px}
+
+  .flow{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch;margin:14px 0 12px}
+  .flow .step{
+    flex:1;min-width:104px;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    padding:9px 10px;font-size:12.3px;line-height:1.5
+  }
+  .flow .step b{display:block;font-size:12.6px;margin-bottom:1px}
+  .flow .step span{color:var(--sub);font-size:11.6px}
+  .flow .arw{display:grid;place-items:center;color:#c3cddd;font-size:13px;flex:none;width:12px}
+
+  h2{font-size:21px;margin:44px 0 14px;display:flex;align-items:center;gap:10px;letter-spacing:-.3px}
+  h2 .num{
+    width:27px;height:27px;border-radius:8px;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-size:13px;font-weight:700;flex:none
+  }
+  h3{font-size:15.5px;margin:24px 0 8px}
+  h4{font-size:14.5px;margin:22px 0 8px;color:var(--ink)}
+
+  .pill{font-size:10.5px;font-weight:700;border-radius:4px;padding:1px 6px;margin-left:8px;flex:none;align-self:center}
+  .pill.p0{background:var(--bad-soft);color:var(--bad)}
+  .pill.p1{background:var(--warn-soft);color:var(--warn)}
+  .pill.p2{background:var(--accent-soft);color:var(--accent-deep)}
+
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel);margin:16px 0 20px}
+  table{border-collapse:collapse;width:100%;min-width:520px;font-size:13.2px;line-height:1.65}
+  th{
+    background:#f7f9fc;text-align:left;font-weight:600;color:var(--sub);font-size:12.1px;
+    padding:10px 13px;border-bottom:1px solid var(--line);white-space:nowrap
+  }
+  td{padding:10px 13px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.k{color:var(--ink);font-weight:600;white-space:nowrap}
+
+  .note{
+    border-left:3px solid var(--accent);background:var(--panel);border-radius:0 9px 9px 0;
+    padding:13px 17px;margin:18px 0;font-size:13.8px;color:var(--sub)
+  }
+  .note b{color:var(--ink)}
+  .note.warn{border-color:#e2a33c;background:var(--warn-soft)}
+  .note.bad{border-color:#cf4a3f;background:var(--bad-soft)}
+  .note.ok{border-color:#2f8f68;background:var(--ok-soft)}
+
+  .cards{display:grid;gap:11px;grid-template-columns:repeat(auto-fit,minmax(224px,1fr));margin:16px 0 20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+  .card h4{margin:0 0 5px;font-size:13.8px}
+  .card p{margin:0;font-size:12.8px;color:var(--sub);line-height:1.65}
+  .card .tag{
+    display:inline-block;font-size:10.5px;font-weight:700;color:var(--accent-deep);
+    background:var(--accent-soft);border-radius:4px;padding:1px 6px;margin-bottom:7px
+  }
+
+  /* ---- 架构图 ---- */
+  .fig{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px 6px;margin:20px 0 22px}
+  .fig-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink);margin:0 0 4px}
+  .fig-h i{font-style:normal;font-family:var(--mono);font-size:10.5px;font-weight:700;color:#fff;background:var(--accent);border-radius:4px;padding:1px 6px;flex:none;white-space:nowrap}
+  .fig-scroll{display:block}
+  .fig svg{display:block;width:100%;height:auto;margin-top:6px}
+  .fig figcaption{margin:9px 0 8px;font-size:12.3px;color:var(--sub);line-height:1.65}
+  .fig figcaption b{color:var(--ink);font-weight:600}
+
+  .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0 20px}
+  .tcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 15px 10px;min-width:0}
+  .tcard h4{margin:0 0 2px;font-size:14px;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+  .tcard h4 em{font-style:normal;font-family:var(--mono);font-size:11.5px;color:var(--faint);font-weight:400}
+  .tcard .fig-scroll{margin:4px 0 0}
+  .tcard svg{display:block;width:100%;height:auto}
+  .tcard p{margin:6px 0 0;font-size:12.3px;color:var(--sub);line-height:1.62}
+  .tcard p b{color:var(--ink);font-weight:600}
+
+  .checkpoint{background:var(--purple-soft);border:1px solid #ded7f2;border-radius:13px;padding:18px 22px;margin:22px 0 6px}
+  .checkpoint .cp-tag{
+    display:inline-block;font-size:11.5px;font-weight:700;color:#fff;background:var(--purple);
+    border-radius:5px;padding:2px 9px;margin-bottom:9px
+  }
+  .checkpoint h4{margin:0 0 7px;font-size:15px;color:#3f2f7a}
+  .checkpoint p,.checkpoint li{font-size:13.4px;color:#4a4266;line-height:1.72}
+  .checkpoint ul{margin-bottom:8px}
+  .checkpoint .hint{font-size:12.6px;color:#6b6390;border-top:1px dashed #d5cdec;padding-top:9px;margin-top:10px}
+
+  .takeaway{
+    background:#1b2330;color:#e9eef7;border-radius:10px;padding:12px 18px;
+    font-size:13.8px;font-weight:500;margin:20px 0 4px;line-height:1.7
+  }
+  .takeaway::before{
+    content:"一句话带走";display:block;font-size:10.5px;color:#8b9aab;
+    letter-spacing:.6px;margin-bottom:3px;font-weight:400
+  }
+
+  .pager{display:flex;gap:11px;margin:44px 0 0;padding-top:20px;border-top:1px solid var(--line)}
+  .pager a{flex:1;border:1px solid var(--line);background:var(--panel);border-radius:11px;padding:13px 17px;color:var(--sub)}
+  .pager a:hover{border-color:#c9d8f5;text-decoration:none}
+  .pager a em{display:block;font-style:normal;font-size:11.5px;color:var(--faint);margin-bottom:2px}
+  .pager a b{color:var(--ink);font-size:13.8px}
+  .pager a.next{text-align:right}
+
+  .totop{
+    position:fixed;right:26px;bottom:26px;width:36px;height:36px;border-radius:10px;
+    background:#fff;border:1px solid var(--line);color:var(--sub);cursor:pointer;display:none;
+    place-items:center;font-size:14px;z-index:40
+  }
+  .totop.show{display:grid}
+
+  @media (max-width:520px){
+    .btn-print{font-size:0;padding:6px 10px}
+    .btn-print::after{content:"打印";font-size:12px}
+    .brand b{font-size:13.5px}
+  }
+  @media (max-width:900px){
+    .brand em{display:none}
+    .topbar .bar{padding:0 18px}
+    .navstrip{padding:0 18px}
+    .navstrip::before,.navstrip::after{width:46px}
+    .topnav{gap:15px}
+    .topnav a{font-size:12.8px}
+    .doc{padding:22px 18px 64px}
+    .goals{grid-template-columns:repeat(2,1fr)}
+    .flow{flex-direction:column}
+    .flow .step{min-width:0}
+    .flow .arw{display:none}
+    h2{font-size:19px}
+    .fig{padding:12px 12px 4px}
+    .fig-scroll{overflow-x:auto;scrollbar-width:thin}
+    .fig-scroll svg{min-width:640px}
+    .fig figcaption::after{content:"（图可左右滑动查看）";display:block;color:#b3c0d1;margin-top:2px}
+    .tgrid{grid-template-columns:1fr}
+    .tcard .fig-scroll svg{min-width:380px}
+  }
+  @media print{
+    .topbar,.totop,.pager{display:none!important}
+    body{background:#fff;font-size:10.5pt}
+    .shell{display:block;max-width:none}
+    .doc{padding:0;max-width:none}
+    section,.note,.checkpoint,.cards,.flow,.tblwrap,.takeaway,.fig,.tcard{break-inside:avoid;page-break-inside:avoid}
+    h2{break-after:avoid;page-break-after:avoid;font-size:13pt}
+    .goals div,.note,.checkpoint,th{background:#fafbfd!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .takeaway{background:#1b2330!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    a{color:var(--ink)}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="bar">
+    <div class="brand">
+      <div class="mark">A</div>
+      <b>Supervisor 多智能体编排</b>
+      <em>第二天 · 多智能体编排</em>
+    </div>
+    <button class="btn-print" onclick="window.print()">打印 / 导出 PDF</button>
+  </div>
+  <div class="navstrip">
+    <nav class="topnav" id="topnav">
+      <a href="#goal">课程目标</a>
+      <a href="#map">课程地图</a>
+      <a href="#c1"><span class="n">1</span>什么时候该拆</a>
+      <a href="#c2"><span class="n">2</span>四种拓扑</a>
+      <a href="#c3"><span class="n">3</span>运行闭环</a>
+      <a href="#c4"><span class="n">4</span>四个死穴</a>
+      <a href="#c5"><span class="n">5</span>六个决策</a>
+      <a href="#c6"><span class="n">6</span>画出拓扑</a>
+    </nav>
+  </div>
+</header>
+
+<div class="shell">
+  <main class="doc">
+
+    <section id="goal" class="goal">
+      <h1>Supervisor 多智能体编排</h1>
+      <p class="sub">多智能体不是「高级版单 Agent」。它是为了治三个具体的病，也自带四个新的坑。这一篇把两边都说清楚。</p>
+      <div class="goals">
+        <div><b>01 判断</b>单 Agent 什么时候该拆</div>
+        <div><b>02 认出</b>四种拓扑各自的能力边界</div>
+        <div><b>03 说清</b>Supervisor 的四步闭环</div>
+        <div><b>04 避开</b>四个必踩的死穴</div>
+        <div><b>05 定下</b>六个开工前必须拍板的决策</div>
+      </div>
+    </section>
+
+    <section id="map">
+      <div class="flow">
+        <div class="step"><b>该不该拆</b><span>三个判断信号</span></div>
+        <div class="arw">→</div>
+        <div class="step"><b>拆成什么</b><span>四种拓扑选型</span></div>
+        <div class="arw">→</div>
+        <div class="step"><b>怎么跑</b><span>四步闭环</span></div>
+        <div class="arw">→</div>
+        <div class="step"><b>会死在哪</b><span>四个死穴</span></div>
+        <div class="arw">→</div>
+        <div class="step"><b>怎么定</b><span>六个决策 + 画图</span></div>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:120px">阶段</th><th>你要做的事</th><th style="width:290px">这一段的产出</th><th style="width:70px">优先级</th></tr>
+          <tr><td class="k">定必要性</td><td>拿三个信号对照自己的场景，确认是不是真的需要拆</td><td>一句「为什么必须拆」或「暂时不拆」</td><td>P0</td></tr>
+          <tr><td class="k">选拓扑</td><td>在 Supervisor / Handoff / 分层 / 网状之间选一个</td><td>拓扑选型理由</td><td>P0</td></tr>
+          <tr><td class="k">定机制</td><td>把路由、委派、执行、回收四步和六个决策定下来</td><td>一份编排设计要点</td><td>P0</td></tr>
+          <tr><td class="k">出图纸</td><td>画出一张带工具、终止条件、兜底路径的拓扑图</td><td>一张拓扑图</td><td>P1</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section id="c1">
+      <h2><span class="num">1</span>单 Agent 什么时候不够用<span class="pill p0">P0</span></h2>
+      <p>三个信号，出现任意一个，就该考虑拆分。注意是「信号」，不是「感觉」。</p>
+      <div class="cards">
+        <div class="card">
+          <span class="tag">信号一</span>
+          <h4>工具超过二十个</h4>
+          <p>候选工具一多，模型选错的概率陡增。它不会告诉你「我不确定」，它会自信地选一个错的，然后编个理由。</p>
+        </div>
+        <div class="card">
+          <span class="tag">信号二</span>
+          <h4>三类知识挤在一个上下文</h4>
+          <p>查制度、算金额、写文书，三种任务需要完全不同的背景材料。塞在一起，模型会被无关信息带偏。</p>
+        </div>
+        <div class="card">
+          <span class="tag">信号三</span>
+          <h4>不同环节要求不一样</h4>
+          <p>检索要便宜快、写文书要强模型、涉及金额要严格权限。一个 Agent 配一套参数，满足不了三种要求。</p>
+        </div>
+      </div>
+      <div class="note warn"><b>最常见的错误理由：「多智能体显得更专业」。</b>它带来的成本是数倍 token、数倍延迟、数倍调试难度。拆分的前提是撞到了上面三个信号之一，而不是想让架构图好看。</div>
+      <p>还有一个更隐蔽的成本容易被低估：<b>拆分会让「改一处」变成「改三处」</b>。单 Agent 改个提示词就完事的地方，拆分后要同步改路由描述、子 Agent 提示词、以及回收判断逻辑。这笔账在需求稳定前是亏的。</p>
+      <div class="takeaway">拆分的前提是撞到三个信号之一；为了架构图好看而拆，是最贵的自嗨。</div>
+    </section>
+
+    <section id="c2">
+      <h2><span class="num">2</span>四种多智能体拓扑<span class="pill p0">P0</span></h2>
+      <p>多智能体不是只有一种形状。按「谁掌握控制权」分，主流是四种：</p>
+      <div class="tgrid">
+        <div class="tcard">
+          <h4>Supervisor<em>中心调度</em></h4>
+          <div class="fig-scroll">
+          <svg viewBox="0 0 420 176" role="img" aria-label="Supervisor 拓扑：一个调度者向多个子 Agent 分发任务">
+            <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#9db4d0"/></marker></defs>
+            <rect x="150" y="12" width="120" height="34" rx="9" fill="#eef3ff" stroke="#b9cff7"/>
+            <text x="210" y="34" text-anchor="middle" font-size="13" font-weight="600" fill="#1d4ed8">调度者</text>
+            <path d="M210 46 V78 H75 V108" fill="none" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#m1)"/>
+            <path d="M210 46 V108" fill="none" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#m1)"/>
+            <path d="M210 46 V78 H345 V108" fill="none" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#m1)"/>
+            <rect x="20" y="110" width="110" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="75" y="132" text-anchor="middle" font-size="12" fill="#1b2330">子 Agent 1</text>
+            <rect x="155" y="110" width="110" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="210" y="132" text-anchor="middle" font-size="12" fill="#1b2330">子 Agent 2</text>
+            <rect x="290" y="110" width="110" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="345" y="132" text-anchor="middle" font-size="12" fill="#1b2330">子 Agent 3</text>
+            <text x="210" y="166" text-anchor="middle" font-size="11" fill="#8b9aab">子 Agent 之间不直接对话</text>
+          </svg>
+          </div>
+          <p><b>可审计。</b>每一步为什么这么走，都在调度者的决策里。代价是它成了单点。</p>
+        </div>
+        <div class="tcard">
+          <h4>Handoff / Swarm<em>控制权移交</em></h4>
+          <div class="fig-scroll">
+          <svg viewBox="0 0 420 176" role="img" aria-label="Handoff 拓扑：对话依次交给下一个 Agent">
+            <defs><marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#9db4d0"/></marker></defs>
+            <text x="210" y="34" text-anchor="middle" font-size="11" fill="#8b9aab">控制权随对话一起转移</text>
+            <rect x="20" y="60" width="96" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="68" y="82" text-anchor="middle" font-size="12" fill="#1b2330">受理</text>
+            <rect x="152" y="60" width="96" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="200" y="82" text-anchor="middle" font-size="12" fill="#1b2330">技术支持</text>
+            <rect x="284" y="60" width="96" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="332" y="82" text-anchor="middle" font-size="12" fill="#1b2330">退款</text>
+            <line x1="118" y1="77" x2="148" y2="77" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#m2)"/>
+            <line x1="250" y1="77" x2="280" y2="77" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#m2)"/>
+            <text x="210" y="120" text-anchor="middle" font-size="11" fill="#9a6200">没有回头箭头：交出去容易，收不回来</text>
+          </svg>
+          </div>
+          <p><b>天然贴合转接。</b>客服分诊最顺手；多跳之后没人知道全局状态。</p>
+        </div>
+        <div class="tcard">
+          <h4>Hierarchical<em>分层调度</em></h4>
+          <div class="fig-scroll">
+          <svg viewBox="0 0 420 176" role="img" aria-label="Hierarchical 拓扑：总调度下辖两个调度，各自再下辖子 Agent">
+            <defs><marker id="m3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#9db4d0"/></marker></defs>
+            <rect x="170" y="8" width="80" height="30" rx="8" fill="#eef3ff" stroke="#b9cff7"/>
+            <text x="210" y="27" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1d4ed8">总调度</text>
+            <path d="M210 40 V52 H130 V62" fill="none" stroke="#9db4d0" stroke-width="1.4" marker-end="url(#m3)"/>
+            <path d="M210 40 V52 H290 V62" fill="none" stroke="#9db4d0" stroke-width="1.4" marker-end="url(#m3)"/>
+            <rect x="90" y="64" width="80" height="30" rx="8" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="130" y="83" text-anchor="middle" font-size="11.5" fill="#1b2330">调度 A</text>
+            <rect x="250" y="64" width="80" height="30" rx="8" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="290" y="83" text-anchor="middle" font-size="11.5" fill="#1b2330">调度 B</text>
+            <path d="M130 96 V110 H56 V122" fill="none" stroke="#9db4d0" stroke-width="1.4" marker-end="url(#m3)"/>
+            <path d="M130 96 V110 H138 V122" fill="none" stroke="#9db4d0" stroke-width="1.4" marker-end="url(#m3)"/>
+            <path d="M290 96 V110 H282 V122" fill="none" stroke="#9db4d0" stroke-width="1.4" marker-end="url(#m3)"/>
+            <path d="M290 96 V110 H364 V122" fill="none" stroke="#9db4d0" stroke-width="1.4" marker-end="url(#m3)"/>
+            <rect x="18" y="124" width="76" height="30" rx="8" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="56" y="143" text-anchor="middle" font-size="10.5" fill="#5b6b7f">子 1</text>
+            <rect x="100" y="124" width="76" height="30" rx="8" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="138" y="143" text-anchor="middle" font-size="10.5" fill="#5b6b7f">子 2</text>
+            <rect x="244" y="124" width="76" height="30" rx="8" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="282" y="143" text-anchor="middle" font-size="10.5" fill="#5b6b7f">子 3</text>
+            <rect x="326" y="124" width="76" height="30" rx="8" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="364" y="143" text-anchor="middle" font-size="10.5" fill="#5b6b7f">子 4</text>
+            <text x="210" y="170" text-anchor="middle" font-size="11" fill="#8b9aab">子域太多，一层管不过来时用</text>
+          </svg>
+          </div>
+          <p><b>能扩到很多子域。</b>代价是一次请求的调用树很难看清。</p>
+        </div>
+        <div class="tcard">
+          <h4>Network<em>任意互联</em></h4>
+          <div class="fig-scroll">
+          <svg viewBox="0 0 420 176" role="img" aria-label="Network 拓扑：四个 Agent 两两互联，没有中心">
+            <text x="210" y="14" text-anchor="middle" font-size="11" fill="#8b9aab">没有中心，谁都能找谁</text>
+            <line x1="108" y1="39" x2="312" y2="39" stroke="#c3d4ea" stroke-width="1.4"/>
+            <line x1="108" y1="137" x2="312" y2="137" stroke="#c3d4ea" stroke-width="1.4"/>
+            <line x1="61" y1="58" x2="61" y2="118" stroke="#c3d4ea" stroke-width="1.4"/>
+            <line x1="359" y1="58" x2="359" y2="118" stroke="#c3d4ea" stroke-width="1.4"/>
+            <line x1="106" y1="52" x2="314" y2="124" stroke="#c3d4ea" stroke-width="1.4"/>
+            <line x1="314" y1="52" x2="106" y2="124" stroke="#c3d4ea" stroke-width="1.4"/>
+            <rect x="16" y="22" width="90" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="61" y="44" text-anchor="middle" font-size="10.5" fill="#1b2330">Agent A</text>
+            <rect x="314" y="22" width="90" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="359" y="44" text-anchor="middle" font-size="10.5" fill="#1b2330">Agent B</text>
+            <rect x="16" y="120" width="90" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="61" y="142" text-anchor="middle" font-size="10.5" fill="#1b2330">Agent D</text>
+            <rect x="314" y="120" width="90" height="34" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+            <text x="359" y="142" text-anchor="middle" font-size="10.5" fill="#1b2330">Agent C</text>
+          </svg>
+          </div>
+          <p><b>只适合探索。</b>路径不可预测、不可复现，生产基本不用。</p>
+        </div>
+      </div>
+      <p>四张图放在一起看，差别只有一句话：<b>控制权在哪儿</b>。第一张在中心，第二张跟着对话走，第三张分了两级，第四张散在每个人手里。</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:126px">拓扑</th><th style="width:200px">控制方式</th><th>适合</th><th style="width:166px">主要风险</th></tr>
+          <tr>
+            <td class="k">Supervisor<br><span style="font-weight:400;color:var(--faint);font-size:12px">中心调度</span></td>
+            <td>一个调度者持有全部控制权，子 Agent 之间不直接对话</td>
+            <td>环节清晰、需要审计、需要知道「每步为什么这么走」的业务流</td>
+            <td>调度者是单点；它判断错，整条链都错</td>
+          </tr>
+          <tr>
+            <td class="k">Handoff / Swarm<br><span style="font-weight:400;color:var(--faint);font-size:12px">控制权移交</span></td>
+            <td>当前 Agent 直接把对话交给下一个，自己不保留调度权</td>
+            <td>客服分诊、对话式路由，场景天然是「转接」</td>
+            <td>交出去容易收不回来，多跳之后没人知道全局状态</td>
+          </tr>
+          <tr>
+            <td class="k">Hierarchical<br><span style="font-weight:400;color:var(--faint);font-size:12px">分层调度</span></td>
+            <td>Supervisor 管 Supervisor，逐层下放</td>
+            <td>子域极多、单层管不过来的大型系统</td>
+            <td>层级一多，一次请求的调用树很难看清</td>
+          </tr>
+          <tr>
+            <td class="k">Network<br><span style="font-weight:400;color:var(--faint);font-size:12px">任意互联</span></td>
+            <td>Agent 之间自由通信，没有中心</td>
+            <td>研究探索、开放式协作实验</td>
+            <td>不可预测、不可复现，生产基本不用</td>
+          </tr>
+        </table>
+      </div>
+      <div class="note"><b>Supervisor 的本质，是把不确定的协作收敛成一条可审计的主线。</b>代价是所有判断压力都压在调度者身上——所以它的路由质量，直接决定整个系统的上限。</div>
+      <p>选 Supervisor 的理由通常不复杂：业务环节明确、需要知道每一步为什么这么走、出问题要能指到具体是哪次委派。这三条正好是 Supervisor 强、Handoff 弱的地方。</p>
+      <div class="note ok"><b>一句话区分 Supervisor 和 Handoff：</b>Handoff 是「你接着聊，我下班了」；Supervisor 是「你去办，办完回来给我」。前者转移责任，后者只转移任务。</div>
+      <div class="takeaway">Supervisor 只转移任务、不转移责任；Handoff 把责任一起交出去了，所以难收口。</div>
+    </section>
+
+    <section id="c3">
+      <h2><span class="num">3</span>Supervisor 的运行闭环<span class="pill p0">P0</span></h2>
+      <p>一次用户请求，在 Supervisor 里走四步，可能循环几轮：</p>
+      <figure class="fig">
+        <div class="fig-h"><i>图 1</i>四步闭环：三个箭头进去，两个出口出来</div>
+        <div class="fig-scroll">
+        <svg viewBox="0 0 900 240" role="img" aria-label="Supervisor 四步闭环：路由、委派、执行、回收，不够则回到路由再来一轮，够了则收口输出">
+          <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#9db4d0"/></marker></defs>
+
+          <path d="M790 86 V46 H130 V84" fill="none" stroke="#c3d4ea" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#a1)"/>
+          <text x="460" y="36" text-anchor="middle" font-size="11.5" fill="#8b9aab">不够 → 再路由一轮（必须有轮次上限）</text>
+
+          <rect x="40" y="88" width="180" height="70" rx="12" fill="#eef3ff" stroke="#b9cff7"/>
+          <text x="130" y="118" text-anchor="middle" font-size="16" font-weight="600" fill="#1d4ed8">① 路由</text>
+          <text x="130" y="142" text-anchor="middle" font-size="11.5" fill="#3b5b8f">读意图 + 读状态</text>
+
+          <rect x="260" y="88" width="180" height="70" rx="12" fill="#fff6e6" stroke="#f0d19a"/>
+          <text x="350" y="118" text-anchor="middle" font-size="16" font-weight="600" fill="#9a6200">② 委派</text>
+          <text x="350" y="142" text-anchor="middle" font-size="11.5" fill="#9a6200">打包结构化简报</text>
+
+          <rect x="480" y="88" width="180" height="70" rx="12" fill="#f8fafc" stroke="#dbe3ef"/>
+          <text x="570" y="118" text-anchor="middle" font-size="16" font-weight="600" fill="#1b2330">③ 执行</text>
+          <text x="570" y="142" text-anchor="middle" font-size="11.5" fill="#5b6b7f">子 Agent 用自己的工具</text>
+
+          <rect x="700" y="88" width="180" height="70" rx="12" fill="#f8fafc" stroke="#dbe3ef"/>
+          <text x="790" y="118" text-anchor="middle" font-size="16" font-weight="600" fill="#1b2330">④ 回收</text>
+          <text x="790" y="142" text-anchor="middle" font-size="11.5" fill="#5b6b7f">够了没有，够了就停</text>
+
+          <line x1="222" y1="123" x2="256" y2="123" stroke="#9db4d0" stroke-width="1.7" marker-end="url(#a1)"/>
+          <line x1="442" y1="123" x2="476" y2="123" stroke="#9db4d0" stroke-width="1.7" marker-end="url(#a1)"/>
+          <line x1="662" y1="123" x2="696" y2="123" stroke="#9db4d0" stroke-width="1.7" marker-end="url(#a1)"/>
+
+          <line x1="790" y1="160" x2="790" y2="192" stroke="#2f8f68" stroke-width="1.7" marker-end="url(#a1)"/>
+          <text x="790" y="216" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0f7a52">够了 → 收口输出</text>
+        </svg>
+        </div>
+        <figcaption>四个盒子里，只有 ② 是<b>唯一每次都新建内容</b>的一步——路由是判断，执行是别人的活，回收也是判断。所以整条链的质量，八成压在「简报写得对不对」上。</figcaption>
+      </figure>
+
+      <p>这四步里最容易被做坏的是第 ② 步。委派时把前面三十轮对话整个塞给子 Agent，它抓不住重点；只给一句话，它又缺关键约束——比如「金额单位是万元」这种前提没说，算出来差四个零。</p>
+      <p>所以委派要有一个固定结构，不是随手拼一段话：</p>
+      <figure class="fig">
+        <div class="fig-h"><i>图 2</i>委派不是转发：把三十轮聊天压成五格</div>
+        <div class="fig-scroll">
+        <svg viewBox="0 0 900 254" role="img" aria-label="对比图：左侧是把全部对话历史直接转发给子 Agent，右侧是结构化的五格委派简报">
+          <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#9db4d0"/></marker></defs>
+
+          <text x="40" y="36" font-size="13" font-weight="600" fill="#b8382c">✕ 把三十轮对话整个转发</text>
+          <rect x="40" y="56" width="330" height="16" rx="4" fill="#f8fafc" stroke="#e3e8ef"/>
+          <rect x="180" y="77" width="240" height="16" rx="4" fill="#f8fafc" stroke="#e3e8ef"/>
+          <rect x="40" y="98" width="300" height="16" rx="4" fill="#f8fafc" stroke="#e3e8ef"/>
+          <rect x="230" y="119" width="190" height="16" rx="4" fill="#f8fafc" stroke="#e3e8ef"/>
+          <rect x="40" y="140" width="340" height="16" rx="4" fill="#f8fafc" stroke="#e3e8ef"/>
+          <rect x="160" y="161" width="260" height="16" rx="4" fill="#f8fafc" stroke="#e3e8ef"/>
+          <rect x="40" y="182" width="270" height="16" rx="4" fill="#f8fafc" stroke="#e3e8ef"/>
+          <text x="40" y="222" font-size="11.5" fill="#b8382c">信息过载，子 Agent 抓错重点</text>
+
+          <line x1="426" y1="128" x2="470" y2="128" stroke="#9db4d0" stroke-width="1.7" marker-end="url(#a2)"/>
+          <text x="448" y="118" text-anchor="middle" font-size="11" fill="#8b9aab">封装</text>
+
+          <text x="484" y="36" font-size="13" font-weight="600" fill="#0f7a52">✓ 五格结构化简报</text>
+          <rect x="484" y="52" width="376" height="28" rx="7" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="498" y="71" font-size="12" fill="#0f7a52">① 任务目标　一句话说清要产出什么</text>
+          <rect x="484" y="86" width="376" height="28" rx="7" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="498" y="105" font-size="12" fill="#0f7a52">② 必要上下文　只给完成这一步必需的</text>
+          <rect x="484" y="120" width="376" height="28" rx="7" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="498" y="139" font-size="12" fill="#0f7a52">③ 约束条件　单位、口径、时效、禁用数据</text>
+          <rect x="484" y="154" width="376" height="28" rx="7" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="498" y="173" font-size="12" fill="#0f7a52">④ 产出格式　结构化还是自然语言，要几点</text>
+          <rect x="484" y="188" width="376" height="28" rx="7" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="498" y="207" font-size="12" fill="#0f7a52">⑤ 不许做什么　禁止清单比允许清单更有效</text>
+          <text x="484" y="238" font-size="11.5" fill="#0f7a52">缺任何一格，回收时都要再返工一遍</text>
+        </svg>
+        </div>
+        <figcaption>左边那堆东西不是「上下文丰富」，是<b>把找重点的活丢给了子 Agent</b>。而子 Agent 没有全局视角，它只会抓住最显眼的那句——通常不是最重要的那句。</figcaption>
+      </figure>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:140px">简报要素</th><th>写什么</th><th style="width:210px">不写的后果</th></tr>
+          <tr><td class="k">任务目标</td><td>一句话说清要产出什么，不是要干什么活</td><td>子 Agent 做了一堆事，没有一件是你想要的</td></tr>
+          <tr><td class="k">必要上下文</td><td>只给完成这个任务必需的信息，其余不放</td><td>信息过载，子 Agent 抓错重点</td></tr>
+          <tr><td class="k">约束条件</td><td>单位、口径、时效、不能用哪些数据</td><td>结果形式对、数值全错</td></tr>
+          <tr><td class="k">产出格式</td><td>要结构化还是自然语言、要几个要点</td><td>回收时无法被下游直接使用，还要再加工一遍</td></tr>
+          <tr><td class="k">不许做什么</td><td>明确禁止的动作，比允许清单更有效</td><td>子 Agent 「顺手」做了一件不该做的事</td></tr>
+        </table>
+      </div>
+
+      <div class="note"><b>记住一句话：Supervisor 不干活。</b>它不检索、不算数、不写正文。它只做两件事——决定谁上，决定什么时候停。判断力是它唯一的资产，一旦它开始自己动手，拆分就失去意义了。</div>
+      <p>这也解释了一个常见现象：Supervisor 的提示词应该很短，短到只有「你是谁、有哪几个下属、各自负责什么、什么时候必须停」。如果它的提示词比子 Agent 还长，说明它在越权干活。</p>
+      <div class="takeaway">Supervisor 不干活，只决定谁上和什么时候停；它的提示词越短，说明职责越干净。</div>
+    </section>
+
+    <section id="c4">
+      <h2><span class="num">4</span>四个死穴<span class="pill p0">P0</span></h2>
+
+      <h3>死穴一：路由漂移</h3>
+      <p><b>症状：</b>子 Agent 交了结果，Supervisor 觉得「还不够」，又派给另一个；第二个也交回来，它还是不满意，再派回第一个。用户等了几十秒，什么都没拿到。</p>
+      <p><b>处方：</b>给调度设硬性轮次上限（比如最多三轮委派），到上限就强制收口——哪怕答案不完美，也要给出「目前掌握的情况 + 还缺什么」。有缺陷的回答，好过无限等待。</p>
+
+      <h3>死穴二：上下文失真</h3>
+      <p><b>症状：</b>两个极端。要么把全部历史丢过去，子 Agent 被无关信息淹没；要么只给一句话，子 Agent 缺关键前提，答得离谱。</p>
+      <p><b>处方：</b>用上一节那张简报结构。核心原则是<b>「委派要像给同事派活，不像把聊天记录转发给他」</b>——你不会把一个三十页的群聊记录甩给同事说「你懂的」。</p>
+
+      <h3>死穴三：无限委派</h3>
+      <p><b>症状：</b>A 交给 B，B 觉得该找 A，A 又交给 B。或者子 Agent 在自己的循环里绕圈，每次都在「再查一次」。</p>
+      <p><b>处方：</b>两层预算——<b>全局步数预算</b>（一次请求最多产生多少次模型调用）+ <b>重复检测</b>（相同工具 + 相同参数出现两次就中断）。预算要写进配置，不能靠提示词「请不要重复」。</p>
+      <figure class="fig">
+        <div class="fig-h"><i>图 3</i>两层预算：一层提前喊停，一层兜底</div>
+        <div class="fig-scroll">
+        <svg viewBox="0 0 900 190" role="img" aria-label="一次请求的步数预算条：第 8 步触发重复检测，第 12 步硬性停止">
+          <text x="573" y="38" text-anchor="middle" font-size="11" fill="#9a6200">第 8 步 · 重复检测</text>
+          <text x="782" y="38" text-anchor="middle" font-size="11" fill="#b8382c">第 12 步 · 硬停</text>
+
+          <rect x="80" y="64" width="493" height="40" rx="9" fill="#e3ecfd" stroke="#b9cff7"/>
+          <rect x="573" y="64" width="247" height="40" rx="9" fill="#f8fafc" stroke="#dbe3ef"/>
+          <line x1="141" y1="64" x2="141" y2="104" stroke="#dbe6f8" stroke-width="1"/>
+          <line x1="203" y1="64" x2="203" y2="104" stroke="#dbe6f8" stroke-width="1"/>
+          <line x1="265" y1="64" x2="265" y2="104" stroke="#dbe6f8" stroke-width="1"/>
+          <line x1="327" y1="64" x2="327" y2="104" stroke="#dbe6f8" stroke-width="1"/>
+          <line x1="388" y1="64" x2="388" y2="104" stroke="#dbe6f8" stroke-width="1"/>
+          <line x1="450" y1="64" x2="450" y2="104" stroke="#dbe6f8" stroke-width="1"/>
+          <line x1="512" y1="64" x2="512" y2="104" stroke="#dbe6f8" stroke-width="1"/>
+          <line x1="635" y1="64" x2="635" y2="104" stroke="#eef1f6" stroke-width="1"/>
+          <line x1="697" y1="64" x2="697" y2="104" stroke="#eef1f6" stroke-width="1"/>
+          <line x1="758" y1="64" x2="758" y2="104" stroke="#eef1f6" stroke-width="1"/>
+
+          <line x1="573" y1="46" x2="573" y2="126" stroke="#e0a33c" stroke-width="1.6" stroke-dasharray="5 4"/>
+          <line x1="820" y1="46" x2="820" y2="126" stroke="#cf4a3f" stroke-width="2"/>
+
+          <text x="80" y="136" font-size="11.5" fill="#5b6b7f">步数预算是硬的：到 12 步无条件收口，哪怕答案不完美。</text>
+          <text x="80" y="160" font-size="11.5" fill="#5b6b7f">重复检测是软的：同一工具同一参数出现两次就中断——它通常比步数先喊停。</text>
+        </svg>
+        </div>
+        <figcaption>两层预算解决的是两个不同的病：<b>重复检测</b>治「在原地绕圈」，<b>步数上限</b>治「一直在往前走但走错方向」。只做后者，绕圈会合法地烧完所有预算。</figcaption>
+      </figure>
+
+      <h3>死穴四：调试黑洞</h3>
+      <p><b>症状：</b>一次用户请求产生二十次子调用。用户说答错了，你打开日志，看到一坨交错的时间线，完全不知道哪一步开始跑偏。</p>
+      <p><b>处方：</b>每次委派必须带同一个请求标识，并且有独立的追踪段。理想状态下，你能一眼看出「第 3 次委派给检索 Agent 时，它拿到的上下文里缺了时间范围，所以检出了去年的数据」。</p>
+      <div class="note bad"><b>这一条最容易被忽略：</b>多智能体的调试成本不是线性增长的。三个子 Agent 的组合路径已经超过十种，靠读日志基本不可能定位问题——可观测性必须在第一版就做，不能等出事再补。</div>
+      <div class="takeaway">四个死穴的共同解药是硬预算、结构化简报、可追踪的委派——三者缺一，多智能体就变成黑洞。</div>
+    </section>
+
+    <section id="c5">
+      <h2><span class="num">5</span>六个必须提前定的设计决策<span class="pill p0">P0</span></h2>
+      <p>这六个问题如果不在开工前定，会在开发第二周以「返工」的形式回来找你。</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:112px">决策</th><th style="width:220px">常见选项</th><th>怎么选</th></tr>
+          <tr>
+            <td class="k">子 Agent 粒度</td>
+            <td>按能力切（检索 / 计算 / 写作）<br>按业务环节切（受理 / 审核 / 出件）</td>
+            <td>按能力切复用高、边界稳定；按环节切好审计、贴近业务。业务方要看懂就按环节，工程复用优先就按能力</td>
+          </tr>
+          <tr>
+            <td class="k">状态共享</td>
+            <td>全体共享一份消息历史<br>各自独立状态 + 显式传递</td>
+            <td>共享简单但互相污染，独立干净但要设计交接格式。子 Agent 超过三个，建议独立状态</td>
+          </tr>
+          <tr>
+            <td class="k">路由方式</td>
+            <td>模型路由 / 规则路由 / 混合</td>
+            <td>流程稳定的部分用规则（快、免费、可预测），开放意图用模型。生产上基本都是混合，不要纯靠模型</td>
+          </tr>
+          <tr>
+            <td class="k">终止条件</td>
+            <td>轮次上限 / 判据满足 / 人工确认</td>
+            <td>三个都要有。轮次上限兜底，判据满足是正常出口，人工确认留给高风险场景</td>
+          </tr>
+          <tr>
+            <td class="k">失败处理</td>
+            <td>重试 / 降级到通用 Agent / 直接上报</td>
+            <td>可重试的错误重试，能力缺失降级到通用 Agent，权限或数据问题直接上报——别让 Agent 自己想办法绕过限制</td>
+          </tr>
+          <tr>
+            <td class="k">人工介入点</td>
+            <td>高危动作前 / 终稿输出前</td>
+            <td>不可逆动作（付款、删除、对外发送）必须前置审批；内容类任务在终稿前设一次确认即可</td>
+          </tr>
+        </table>
+      </div>
+      <div class="note warn"><b>六个决策里最重要的是前两个。</b>粒度和状态共享一旦定错，后面四个都会跟着拧巴——因为路由方式、终止条件、失败处理都建立在「谁持有状态」这个前提上。</div>
+      <div class="takeaway">六个决策里，粒度与状态共享是地基；这两条定错，其余四条怎么调都不顺。</div>
+    </section>
+
+    <section id="c6">
+      <h2><span class="num">6</span>画出你的拓扑<span class="pill p1">P1</span></h2>
+      <div class="checkpoint">
+        <span class="cp-tag">动手练习</span>
+        <h4>一张纸画完，必须标出四样东西</h4>
+        <ul>
+          <li><b>一个 Supervisor + 三到五个子 Agent</b>，每个子 Agent 旁边写它的职责（一句话，动词开头）</li>
+          <li><b>每个子 Agent 有什么工具</b>，特别是：谁有写权限</li>
+          <li><b>什么情况下必须停</b>——轮次上限几次、哪个动作前要人确认</li>
+          <li><b>谁失败了谁兜</b>——画一条备用路径出来</li>
+        </ul>
+        <p>画完互相问一个问题：<b>「把 Supervisor 拿掉，这个流程还能不能跑？」</b>如果能跑，说明你其实不需要 Supervisor，只是需要一条固定的流水线。这个问题能筛掉一半过度设计。</p>
+        <figure class="fig">
+          <div class="fig-h"><i>图 4</i>照这个骨架画：三个子 Agent、两个填空题</div>
+          <div class="fig-scroll">
+          <svg viewBox="0 0 900 258" role="img" aria-label="拓扑图模板：上方一个 Supervisor，下方三个待填写的子 Agent 方框，底部是停止条件与兜底路径两个填空">
+            <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#9db4d0"/></marker></defs>
+
+            <rect x="370" y="18" width="160" height="38" rx="10" fill="#eef3ff" stroke="#b9cff7"/>
+            <text x="450" y="43" text-anchor="middle" font-size="14" font-weight="600" fill="#1d4ed8">Supervisor</text>
+
+            <path d="M450 58 V78 H140 V96" fill="none" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#a4)"/>
+            <path d="M450 58 V96" fill="none" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#a4)"/>
+            <path d="M450 58 V78 H720 V96" fill="none" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#a4)"/>
+
+            <rect x="40" y="104" width="200" height="78" rx="10" fill="#fbfcfe" stroke="#c3d4ea" stroke-dasharray="6 5"/>
+            <text x="54" y="128" font-size="12.5" font-weight="600" fill="#5b6b7f">子 Agent ①</text>
+            <text x="54" y="152" font-size="11.5" fill="#b3c0d1">职责</text>
+            <line x1="88" y1="156" x2="222" y2="156" stroke="#e3e8ef" stroke-width="1.2"/>
+            <text x="54" y="174" font-size="11.5" fill="#b3c0d1">工具</text>
+            <line x1="88" y1="178" x2="222" y2="178" stroke="#e3e8ef" stroke-width="1.2"/>
+
+            <rect x="330" y="104" width="200" height="78" rx="10" fill="#fbfcfe" stroke="#c3d4ea" stroke-dasharray="6 5"/>
+            <text x="344" y="128" font-size="12.5" font-weight="600" fill="#5b6b7f">子 Agent ②</text>
+            <text x="344" y="152" font-size="11.5" fill="#b3c0d1">职责</text>
+            <line x1="378" y1="156" x2="512" y2="156" stroke="#e3e8ef" stroke-width="1.2"/>
+            <text x="344" y="174" font-size="11.5" fill="#b3c0d1">工具</text>
+            <line x1="378" y1="178" x2="512" y2="178" stroke="#e3e8ef" stroke-width="1.2"/>
+
+            <rect x="620" y="104" width="200" height="78" rx="10" fill="#fbfcfe" stroke="#c3d4ea" stroke-dasharray="6 5"/>
+            <text x="634" y="128" font-size="12.5" font-weight="600" fill="#5b6b7f">子 Agent ③</text>
+            <text x="634" y="152" font-size="11.5" fill="#b3c0d1">职责</text>
+            <line x1="668" y1="156" x2="802" y2="156" stroke="#e3e8ef" stroke-width="1.2"/>
+            <text x="634" y="174" font-size="11.5" fill="#b3c0d1">工具</text>
+            <line x1="668" y1="178" x2="802" y2="178" stroke="#e3e8ef" stroke-width="1.2"/>
+
+            <rect x="40" y="204" width="390" height="40" rx="9" fill="#fff6e6" stroke="#f0d19a"/>
+            <text x="56" y="229" font-size="11.5" fill="#9a6200">停：最多 __ 轮；哪些动作前必须有人确认</text>
+            <rect x="470" y="204" width="390" height="40" rx="9" fill="#fdecea" stroke="#f0b7ae"/>
+            <text x="486" y="229" font-size="11.5" fill="#b8382c">兜底：谁失败了谁兜？把备用路径画出来</text>
+          </svg>
+          </div>
+          <figcaption>空着的那几格，就是这张图真正的信息量所在。一次评审就能画完、但每格都填得出来的图，比画得漂亮却写着「其他」的架构图有用得多。</figcaption>
+        </figure>
+        <div class="hint">自检四条：子 Agent 之间有没有直接对话（有就说明控制权漏出去了）／ 委派简报里有没有「不许做什么」／ 全局预算写在哪／ 一次请求最多产生多少条追踪记录。</div>
+      </div>
+      <div class="takeaway">拿掉 Supervisor 流程还能跑，就说明你不需要它——这条自检能筛掉一半过度设计。</div>
+    </section>
+
+    <div class="pager">
+      <a href="03_主流Agent开源框架与产品.html"><em>上一篇</em><b>← 主流 Agent 开源框架与产品</b></a>
+      <a class="next" href="05_技术选型与ADR.html"><em>下一篇</em><b>技术选型：把八层逐层拍板 →</b></a>
+    </div>
+
+  </main>
+</div>
+
+<button class="totop" id="totop" aria-label="回到顶部">↑</button>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.topnav a'));
+  var nav = document.getElementById('topnav');
+  var sections = Array.prototype.slice.call(document.querySelectorAll('section[id]'));
+  var current = null;
+
+  function reveal(link){
+    if (!link || !nav || nav.scrollWidth <= nav.clientWidth + 2) return;
+    var nr = nav.getBoundingClientRect(), ar = link.getBoundingClientRect();
+    if (ar.left < nr.left + 4) nav.scrollLeft += ar.left - nr.left - 10;
+    else if (ar.right > nr.right - 4) nav.scrollLeft += ar.right - nr.right + 10;
+  }
+
+  var strip = document.querySelector('.navstrip');
+
+  function edges(){
+    if (!nav || !strip) return;
+    var over = nav.scrollWidth > nav.clientWidth + 2;
+    strip.classList.toggle('fade-l', over && nav.scrollLeft > 4);
+    strip.classList.toggle('fade-r', over && nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 4);
+  }
+
+  function activate(){
+    var pos = window.scrollY + 122, cur = sections[0] ? sections[0].id : '';
+    sections.forEach(function(s){ if (s.offsetTop <= pos) cur = s.id; });
+    if (cur !== current) {
+      current = cur;
+      links.forEach(function(a){
+        var on = a.getAttribute('href') === '#' + cur;
+        a.classList.toggle('on', on);
+        if (on) reveal(a);
+      });
+    }
+    document.getElementById('totop').classList.toggle('show', window.scrollY > 600);
+  }
+
+  window.addEventListener('scroll', activate, {passive:true});
+  window.addEventListener('resize', activate);
+  nav.addEventListener('scroll', edges, {passive:true});
+  activate();
+  edges();
+
+  document.getElementById('totop').addEventListener('click', function(){
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -7,14 +7,35 @@ wheels/
 *.egg-info
 *.jsonl
 
-# Virtual environments
-.venv
+# Virtual environments（.venv 之外的实验环境也一并忽略，例如 .venv-poc）
+.venv*/
+venv/
 
 # Environment variables
 .env
 .env.development
 .env.staging
 .env.production
+.env.*.local
+
+# IDE / 编辑器（项目配置走 .vscode/，各人的 IDE 索引不入库）
+.idea/
+*.iml
+*.swp
+
+# 运行时产物
+logs/
+.ruff_cache/
+.pytest_cache/
+.profiling/
+htmlcov/
+.coverage
+
+# 工作台本地数据
+.workbuddy/
+
+# 内容稿的中间版本（课程 HTML 反复改版会留下 .bak）
+*.bak.html
 
 # Misc
 *.ipynb

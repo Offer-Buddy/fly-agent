@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>fly-agent 源码解剖 · 从 0 到 1 搭建手册</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --panel:#ffffff; --ink:#1b2330; --sub:#5b6b7f; --faint:#8b9aab;
+    --line:#e3e8ef; --accent:#2f6df6; --accent-soft:#eaf0ff; --accent-deep:#1d4ed8;
+    --code-bg:#f7f9fc; --code-ink:#22303f;
+    --ok:#0f7a52; --ok-soft:#e8f6ef; --warn:#9a6200; --warn-soft:#fff5e3;
+    --bad:#b8382c; --bad-soft:#fdecea; --purple:#6853b8; --purple-soft:#f1eefb;
+    --mono:"JetBrains Mono","Cascadia Code",Consolas,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.78 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent-deep);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,pre,.mono{font-family:var(--mono)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:50;background:rgba(255,255,255,.92);
+    backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line);
+  }
+  .topbar .wrap{display:flex;align-items:center;gap:18px;height:58px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.2px;white-space:nowrap}
+  .brand .mark{
+    width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#2f6df6,#6f9bff);
+    color:#fff;display:grid;place-items:center;font-size:13px;font-weight:800;
+  }
+  .brand em{font-style:normal;color:var(--sub);font-weight:500;font-size:12.5px}
+  .navlinks{display:flex;gap:4px;overflow:auto;flex:1;scrollbar-width:none}
+  .navlinks::-webkit-scrollbar{display:none}
+  .navlinks a{
+    color:var(--sub);font-size:13.5px;padding:6px 10px;border-radius:7px;white-space:nowrap;
+  }
+  .navlinks a:hover{background:var(--accent-soft);color:var(--accent-deep);text-decoration:none}
+  .navlinks a.on{color:var(--accent-deep);background:var(--accent-soft);font-weight:600}
+  .topbar .print{
+    border:1px solid var(--line);background:#fff;color:var(--sub);border-radius:8px;
+    padding:6px 12px;font-size:13px;cursor:pointer;white-space:nowrap
+  }
+  .topbar .print:hover{border-color:var(--accent);color:var(--accent-deep)}
+
+  /* ---------- hero ---------- */
+  .hero{padding:44px 0 8px}
+  .hero h1{font-size:31px;line-height:1.32;margin:0 0 12px;letter-spacing:-.4px}
+  .hero p.lead{margin:0 0 18px;color:var(--sub);font-size:15.5px;max-width:840px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+  .chip{
+    font-size:12.5px;padding:4px 10px;border-radius:999px;background:#fff;
+    border:1px solid var(--line);color:var(--sub)
+  }
+  .chip b{color:var(--ink);font-weight:600}
+
+  /* ---------- cards / sections ---------- */
+  section{padding:26px 0 8px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px 28px}
+  h2{font-size:21px;margin:34px 0 6px;letter-spacing:-.2px;scroll-margin-top:76px}
+  h2 .num{
+    display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;
+    background:var(--accent-soft);color:var(--accent-deep);font-size:13px;font-weight:700;
+    margin-right:9px;vertical-align:2px
+  }
+  h3{font-size:16.5px;margin:26px 0 8px;scroll-margin-top:76px}
+  h4{font-size:14.5px;margin:18px 0 6px;color:var(--ink)}
+  p{margin:9px 0}
+  .lede{color:var(--sub)}
+  ul,ol{margin:8px 0 8px;padding-left:22px}
+  li{margin:4px 0}
+  .hr{height:1px;background:var(--line);margin:22px 0}
+
+  /* ---------- tables ---------- */
+  .tblwrap{overflow-x:auto;margin:14px 0 6px;border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:13.6px;background:#fff}
+  thead th{
+    text-align:left;font-weight:600;color:var(--sub);font-size:12.5px;letter-spacing:.02em;
+    padding:9px 12px;border-bottom:1.5px solid #cdd6e2;white-space:nowrap;background:#fbfcfe
+  }
+  tbody td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafcff}
+  td.path{font-family:var(--mono);font-size:12.6px;white-space:nowrap;color:#123}
+  td .ln{display:inline-block;min-width:34px;text-align:right;color:var(--faint);font-family:var(--mono);font-size:12px}
+  .dim{color:var(--sub)}
+  .nowrap{white-space:nowrap}
+
+  /* ---------- code ---------- */
+  pre{
+    background:var(--code-bg);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;overflow:auto;font-size:12.9px;line-height:1.62;color:var(--code-ink);
+    margin:12px 0
+  }
+  pre code{background:none;padding:0;font-size:inherit}
+  p code,li code,td code{background:#eef2f8;border:1px solid #e2e9f3;border-radius:5px;padding:1px 5px;font-size:12.4px}
+  .codewrap{position:relative;margin:12px 0}
+  .codewrap pre{margin:0;padding-top:32px}
+  .codewrap .lang{
+    position:absolute;top:0;left:0;right:0;height:28px;display:flex;align-items:center;
+    padding:0 12px;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--faint);border-bottom:1px solid var(--line);background:#fbfcfe;
+    border-radius:10px 10px 0 0;font-family:var(--mono)
+  }
+  .codewrap .copy{
+    position:absolute;top:4px;right:8px;border:1px solid var(--line);background:#fff;
+    color:var(--faint);font-size:11.5px;padding:2px 8px;border-radius:6px;cursor:pointer
+  }
+  .codewrap .copy:hover{color:var(--accent-deep);border-color:var(--accent)}
+
+  /* ---------- callouts ---------- */
+  .box{border-radius:10px;padding:13px 16px;margin:14px 0;font-size:13.8px;border:1px solid}
+  .box .t{font-weight:700;font-size:13px;letter-spacing:.02em;display:block;margin-bottom:3px}
+  .box.ok{background:var(--ok-soft);border-color:#c6e7d7;color:#0c5f41}
+  .box.ok .t{color:var(--ok)}
+  .box.warn{background:var(--warn-soft);border-color:#f3e0b8;color:#7a4d00}
+  .box.warn .t{color:var(--warn)}
+  .box.bad{background:var(--bad-soft);border-color:#f6cdc8;color:#8f2b21}
+  .box.bad .t{color:var(--bad)}
+  .box.note{background:var(--accent-soft);border-color:#d5e2ff;color:#1b3f8f}
+  .box.note .t{color:var(--accent-deep)}
+  .box.purple{background:var(--purple-soft);border-color:#e0d9f7;color:#4a3a8c}
+  .box.purple .t{color:var(--purple)}
+  .box p:first-of-type{margin-top:2px}
+  .box p:last-child{margin-bottom:0}
+
+  /* ---------- layer diagram ---------- */
+  .layers{display:flex;flex-direction:column;gap:9px;margin:16px 0}
+  .layer{
+    display:grid;grid-template-columns:132px 1fr;gap:14px;align-items:center;
+    background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 14px
+  }
+  .layer .name{font-weight:700;font-size:13.5px;color:var(--accent-deep)}
+  .layer .body{font-size:13.2px;color:var(--sub)}
+  .layer .body b{color:var(--ink);font-weight:600}
+  .layer.ext{border-left:3px solid var(--purple)}
+  .layer.core{border-left:3px solid var(--accent)}
+  .layer.edge{border-left:3px solid #b9c6d8}
+
+  /* ---------- step timeline ---------- */
+  .step{
+    background:#fff;border:1px solid var(--line);border-radius:14px;padding:0;margin:18px 0;
+    overflow:hidden
+  }
+  .step > .head{
+    display:flex;align-items:center;gap:12px;padding:15px 22px;background:#fbfcff;
+    border-bottom:1px solid var(--line)
+  }
+  .step .idx{
+    flex:0 0 auto;width:30px;height:30px;border-radius:9px;background:var(--accent);
+    color:#fff;font-weight:800;font-size:14px;display:grid;place-items:center
+  }
+  .step .title{font-weight:700;font-size:15.5px}
+  .step .title small{display:block;font-weight:400;color:var(--sub);font-size:12.5px;margin-top:2px}
+  .step .body{padding:16px 22px 20px}
+  .meta{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 10px;font-size:12.6px;color:var(--sub)}
+  .meta b{color:var(--ink);font-weight:600}
+
+  /* ---------- file nav pills ---------- */
+  .pills{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 4px}
+  .pill{
+    font-size:12.3px;border:1px solid var(--line);background:#fff;border-radius:999px;
+    padding:3px 10px;color:var(--sub);font-family:var(--mono)
+  }
+
+  /* ---------- back to top ---------- */
+  #totop{
+    position:fixed;right:22px;bottom:22px;width:38px;height:38px;border-radius:50%;
+    border:1px solid var(--line);background:#fff;color:var(--sub);cursor:pointer;
+    display:none;place-items:center;box-shadow:0 6px 18px rgba(24,40,72,.12);font-size:15px
+  }
+  #totop:hover{color:var(--accent-deep);border-color:var(--accent)}
+  #totop.show{display:grid}
+
+  footer{margin:44px 0 30px;color:var(--faint);font-size:12.5px;text-align:center}
+
+  @media (max-width:820px){
+    .hero h1{font-size:24px}
+    .panel{padding:20px 16px}
+    .layer{grid-template-columns:1fr;gap:2px}
+    .topbar .wrap{height:52px}
+    h2{font-size:19px}
+  }
+  @media print{
+    .topbar,#totop,.codewrap .copy{display:none!important}
+    body{background:#fff}
+    .panel,.step,.layer,pre{break-inside:avoid}
+    a{color:#000;text-decoration:none}
+    section{padding:8px 0}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="mark">f</span>fly-agent <em>源码解剖 &amp; 搭建手册</em></div>
+    <nav class="navlinks">
+      <a href="#pano" class="on">全景</a>
+      <a href="#files">逐文件</a>
+      <a href="#build">搭建路线</a>
+      <a href="#matrix">依赖矩阵</a>
+      <a href="#traps">踩坑清单</a>
+      <a href="#appendix">附录</a>
+    </nav>
+    <button class="print" onclick="window.print()">打印 / 导出 PDF</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+<div class="hero">
+  <h1>fly-agent：一个 LangGraph + FastAPI 生产级单体，<br>拆开看，再照着搭一遍</h1>
+  <p class="lead">
+    这份文档做两件事。第一，把仓库里 <b>60 个源文件</b>逐个交代清楚——它是干什么的、属于哪条链路、动了会牵到谁。
+    第二，给出一条 <b>按中间件引入顺序</b>的 0→1 搭建路线：每一步只加一个外部依赖，每步都有可执行的验收命令，
+    不做完不往下走。
+  </p>
+  <div class="chips">
+    <span class="chip">代码量 <b>约 6100 行</b></span>
+    <span class="chip">Python <b>3.13+</b> / uv</span>
+    <span class="chip">LangGraph <b>1.x</b> + FastAPI</span>
+    <span class="chip">PostgreSQL <b>16 + pgvector</b></span>
+    <span class="chip">Redis <b>8.0.6</b></span>
+  </div>
+  <div class="box note" style="margin-top:18px">
+    <span class="t">怎么读最快</span>
+    <p>想接手代码 → 直接看 <a href="#files">逐文件</a>；想自己重建一套 → 只看 <a href="#build">搭建路线</a>，
+    每一步末尾的 <b>Checkpoint</b> 就是验收标准，跳步一定会在后面还债。</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<section id="pano">
+  <h2><span class="num">1</span>全景：这个项目到底在解决什么</h2>
+
+  <p class="lede">
+    一句话：<b>给「有状态、能调工具、记得住用户」的聊天服务，提供一个可以直接上生产的骨架。</b>
+    它不是 demo，所有「能跑起来」和「跑得稳」之间的差距，都在这个仓库里被显式处理过了。
+  </p>
+
+  <div class="layers">
+    <div class="layer edge">
+      <div class="name">接入层</div>
+      <div class="body"><b>FastAPI + slowapi + asgi-correlation-id</b> — 路由、限流、请求 ID、CORS、统一异常。入口 <code>app/main.py</code></div>
+    </div>
+    <div class="layer core">
+      <div class="name">会话与身份</div>
+      <div class="body"><b>JWT + SQLModel</b> — 用户表 / 会话表；token 的 <code>sub</code> 先装 user_id 再装 session_id，两套依赖分别解析</div>
+    </div>
+    <div class="layer core">
+      <div class="name">Agent 编排</div>
+      <div class="body"><b>LangGraph StateGraph</b> — <code>chat → tool_call → chat</code> 两节点环；<code>AsyncPostgresSaver</code> 存每一步状态</div>
+    </div>
+    <div class="layer core">
+      <div class="name">模型调用</div>
+      <div class="body"><b>LLMRegistry + LLMService</b> — 预建多模型实例、tenacity 重试、环形降级、结构化输出</div>
+    </div>
+    <div class="layer ext">
+      <div class="name">数据层</div>
+      <div class="body"><b>PostgreSQL 一个库装三样东西</b> — 业务表（user/session）、checkpoint 三表、mem0 的向量表 <code>longterm_memory</code></div>
+    </div>
+    <div class="layer ext">
+      <div class="name">缓存层</div>
+      <div class="body"><b>Redis</b> — 只干两件事：mem0 检索结果缓存（60s TTL）、slowapi 跨进程限流计数</div>
+    </div>
+    <div class="layer ext">
+      <div class="name">可观测</div>
+      <div class="body"><b>structlog + Prometheus + Langfuse + pyinstrument</b> — 日志带 request_id、指标走 <code>/metrics</code>、trace 在 Langfuse、慢请求自动剖面</div>
+    </div>
+    <div class="layer edge">
+      <div class="name">工程化</div>
+      <div class="body"><b>uv + Alembic + pre-commit + GitHub Actions + 多阶段 Docker</b> — 锁版本、迁移、静态检查、构建发布</div>
+    </div>
+  </div>
+
+  <h3>一次 <code>POST /api/v1/chatbot/chat</code> 真实走过的路</h3>
+  <p class="lede">这条链路把大部分文件串起来了，理解它，剩下的文件基本能自动归位。</p>
+
+  <div class="panel" style="padding:18px 20px">
+    <ol style="margin:0">
+      <li><b>接入</b>：<code>CorrelationIdMiddleware</code> 生成 request_id → <code>MetricsMiddleware</code> 开始计时 → <code>LoggingContextMiddleware</code> 解 JWT 把 session_id 塞进日志上下文。</li>
+      <li><b>限流</b>：<code>@limiter.limit(...)</code> 命中，key 是客户端 IP，计数打到 Redis 的 <code>LIMITS:</code> 前缀。</li>
+      <li><b>鉴权</b>：<code>get_current_session</code> 校验 token → 查 <code>session</code> 表 → 拿到 <code>user_id</code> / <code>username</code>。</li>
+      <li><b>请求校验</b>：<code>ChatRequest</code> → <code>Message</code> 逐条检查长度、脚本标签、空字节。</li>
+      <li><b>命名（可选）</b>：会话还叫空名时，<code>UPDATE ... WHERE name=''</code> 原子抢占，抢到的那个请求起后台任务让 nano 模型起标题。</li>
+      <li><b>进图前并发准备</b>：<code>asyncio.gather(graph.aget_state(...), memory_service.search(...))</code> —— 状态检查和长期记忆检索同时跑，省 200–500ms。</li>
+      <li><b>拼消息</b>：<code>load_system_prompt()</code> 注入用户名、长期记忆、当前时间 → <code>prepare_messages()</code> 用 tiktoken 按 <code>MAX_TOKENS</code> 从尾部裁剪。</li>
+      <li><b>模型调用</b>：<code>LLMService.call()</code> 整体 <code>asyncio.wait_for(60s)</code>；内部 tenacity 重试；失败就换注册表里下一个模型，环形转一圈。</li>
+      <li><b>图路由</b>：模型返回 <code>tool_calls</code> 就去 <code>tool_call</code> 节点并发执行工具，否则回 <code>END</code>；每步状态由 checkpointer 落库。</li>
+      <li><b>落记忆</b>：<code>create_background_task(memory_service.add(...))</code> 后台跑，不挡响应；只把最后一条用户消息交给 mem0。</li>
+      <li><b>出站</b>：<code>__process_messages()</code> 把 LangChain 消息转成 <code>{role, content}</code>，丢掉 tool 消息。</li>
+      <li><b>度量</b>：耗时写进 <code>http_request_duration_seconds</code>，LLM 段单独记 <code>llm_inference_duration_seconds</code>。</li>
+    </ol>
+  </div>
+
+  <div class="box warn">
+    <span class="t">先记住一个反直觉的事实</span>
+    <p>这个项目里 <b>PostgreSQL 是单点</b>，不只存业务数据。checkpointer 一旦连不上，
+    <code>create_graph()</code> 会直接抛异常——代码里特意没做「降级为无 checkpointer」的兜底，因为那样会静默丢对话历史。
+    所以排障顺序永远是：<b>先看 PG，再看 LLM，最后看别的</b>。</p>
+  </div>
+
+  <h3>四类「状态的真相来源」</h3>
+  <table>
+    <thead><tr><th>状态</th><th>存在哪</th><th>谁写</th><th>丢了会怎样</th></tr></thead>
+    <tbody>
+      <tr><td>用户 / 会话元数据</td><td class="path">PG: user, session</td><td>Alembic 建表，API 写入</td><td>注册登录全废，但对话历史还在</td></tr>
+      <tr><td>对话消息 + HITL 中断点</td><td class="path">PG: checkpoints / checkpoint_blobs / checkpoint_writes</td><td><code>AsyncPostgresSaver.setup()</code> 自动建，图执行时写</td><td>历史清空、<code>ask_human</code> 无法恢复</td></tr>
+      <tr><td>长期记忆（用户画像事实）</td><td class="path">PG: longterm_memory（vector 列）</td><td>mem0 首次访问自建</td><td>个性化丢失，对话仍可用</td></tr>
+      <tr><td>缓存 + 限流计数</td><td class="path">Redis db 1</td><td>cache_service / slowapi</td><td>只是变慢、限流退回单进程</td></tr>
+    </tbody>
+  </table>
+</section>
+<!-- ============================================================ -->
+<section id="files">
+  <h2><span class="num">2</span>逐文件：60 个文件各自在干什么</h2>
+
+  <p class="lede">
+    按「入口 → 接口 → 核心 → 领域 → 基础设施 → 工程化」的顺序排，跟数据流的方向一致。
+    每张表的最后一列写的是<b>改动风险</b>——哪些一改就牵连别处，哪些随便动。
+  </p>
+
+  <div class="codewrap">
+    <div class="lang">目录结构（注释版）</div>
+<pre><code>fly-agent/
+├─ app/
+│  ├─ main.py                  ← 唯一入口：生命周期、中间件顺序、异常处理
+│  ├─ api/v1/                  ← HTTP 层，只做「收参数 → 调服务 → 出响应」
+│  │  ├─ api.py                  路由汇总
+│  │  ├─ auth.py                 注册/登录/会话管理 + 两个鉴权依赖
+│  │  └─ chatbot.py              对话、流式、历史
+│  ├─ core/                    ← 横切能力，被所有层依赖
+│  │  ├─ config.py               环境变量 → Settings 单例（导入即校验 JWT）
+│  │  ├─ logging.py              structlog + JSONL + request_id 注入
+│  │  ├─ middleware.py           指标 / 日志上下文 / 慢请求剖面
+│  │  ├─ metrics.py              Prometheus 指标定义
+│  │  ├─ observability.py        Langfuse 初始化与回调单例
+│  │  ├─ cache.py                Redis / 内存 双实现 + 工厂
+│  │  ├─ limiter.py              slowapi，storage 指 Redis
+│  │  ├─ langgraph/              Agent 本体
+│  │  │  ├─ graph.py               StateGraph + checkpointer + 工具节点
+│  │  │  └─ tools/                 两个示例工具（搜索 / 问人）
+│  │  └─ prompts/                三份 markdown 提示词 + 加载器
+│  ├─ models/                  ← SQLModel 表定义（只有 3 张真正在用）
+│  ├─ schemas/                 ← Pydantic 出入参 + 图状态
+│  ├─ services/                ← 业务服务：DB / LLM / 记忆 / 会话命名
+│  └─ utils/                   ← 纯函数：JWT、消息处理、清洗、后台任务
+├─ alembic/                    ← 迁移：env.py 从 settings 拼 DSN
+├─ evals/                      ← 用 Langfuse trace 做 LLM 质量评分
+├─ scripts/                    ← 环境加载、容器入口、镜像构建
+├─ docker-compose.yml          ← 全家桶（含 Prometheus/Grafana/cadvisor）
+├─ docker-compose.datastores.yml ← 只起 PG + Redis，本地开发用
+├─ prometheus/ grafana/        ← 监控配置
+└─ pyproject.toml / uv.lock / Makefile / Dockerfile / .env.example</code></pre>
+  </div>
+
+  <!-- ---------------- 根目录 ---------------- -->
+  <h3>2.1 根目录与工程配置（11 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:180px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点 / 改动风险</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="path">pyproject.toml</td><td><span class="ln">151</span></td>
+        <td>依赖声明 + 所有工具配置（ruff / pyright / pytest / black / isort / flake8 / pylint）</td>
+        <td><b>单一事实源</b>。Redis 是主依赖不是 extra（Dockerfile 用 <code>--frozen</code> 不带 extra，放 extra 里容器永远装不上）；<code>requires-python &gt;=3.13</code> 是硬门槛</td>
+      </tr>
+      <tr>
+        <td class="path">uv.lock</td><td><span class="ln">—</span></td>
+        <td>全量锁定版本的解析结果</td>
+        <td>改了 pyproject 必须 <code>uv lock</code>，否则 <code>uv sync --frozen</code> 直接拒绝</td>
+      </tr>
+      <tr>
+        <td class="path">.python-version</td><td><span class="ln">1</span></td>
+        <td>固定 3.13，uv 自动拉对应解释器</td>
+        <td>别改成 3.12：类型语法用了 <code>X | None</code>、<code>override</code>、<code>match</code></td>
+      </tr>
+      <tr>
+        <td class="path">.env.example</td><td><span class="ln">71</span></td>
+        <td>全量环境变量样板，<code>make dev</code> 首次会自动复制成 <code>.env.development</code></td>
+        <td>里面的 <code>POSTGRES_HOST=db</code> 是给容器用的，本地直连宿主机要改 <code>localhost</code></td>
+      </tr>
+      <tr>
+        <td class="path">Makefile</td><td><span class="ln">214</span></td>
+        <td>所有日常命令的统一入口：install / dev / migrate / eval / lint / docker-*</td>
+        <td><code>run_with_env</code> 会先 <code>source scripts/set_env.sh</code>；<code>prod</code>/<code>staging</code> 走 <code>./.venv/bin/python --loop uvloop</code>，<b>Windows 上跑不通</b></td>
+      </tr>
+      <tr>
+        <td class="path">Dockerfile</td><td><span class="ln">51</span></td>
+        <td><code>python:3.13.2-slim</code> + 系统装 libpq + <code>uv sync --frozen</code> 两层缓存 + 非 root 用户</td>
+        <td>依赖层先 COPY <code>pyproject.toml uv.lock</code> 单独装，改代码不会重装依赖；<code>--no-install-project</code> 是缓存关键</td>
+      </tr>
+      <tr>
+        <td class="path">docker-compose.yml</td><td><span class="ln">125</span></td>
+        <td>6 个服务：db(pgvector/pg16) / redis(8.0.6) / app / prometheus / grafana / cadvisor</td>
+        <td><code>JWT_SECRET_KEY</code> 用 <code>:?</code> 语法强制必填；<code>POSTGRES_HOST=db</code>、<code>REDIS_DB=1</code> 在 environment 里覆盖 env_file——否则旧 .env 的值会赢</td>
+      </tr>
+      <tr>
+        <td class="path">docker-compose.datastores.yml</td><td><span class="ln">67</span></td>
+        <td>只起 PG + Redis，端口绑 <code>127.0.0.1</code>，PG 带 <code>--data-checksums</code>、挂 <code>docker/initdb</code> 建扩展</td>
+        <td>本地开发首选：不起 app 镜像，改代码不用重建。<b>与主 compose 互斥</b>（同占 5432/6379）</td>
+      </tr>
+      <tr>
+        <td class="path">alembic.ini</td><td><span class="ln">138</span></td>
+        <td>迁移脚本位置、日志、<code>post_write_hooks</code>（新建迁移自动 ruff 格式化）</td>
+        <td><code>sqlalchemy.url</code> 故意留空——真实 URL 在 <code>env.py</code> 里从 settings 拼</td>
+      </tr>
+      <tr>
+        <td class="path">AGENTS.md</td><td><span class="ln">223</span></td>
+        <td>给 AI 编码代理的项目宪法：日志规范、重试必须用 tenacity、导入必须在顶部等「十诫」</td>
+        <td>不参与运行，但会直接影响 AI 生成的代码风格；改它等于改团队约定</td>
+      </tr>
+      <tr>
+        <td class="path">CLAUDE.md</td><td><span class="ln">1</span></td>
+        <td>一行指向 AGENTS.md</td>
+        <td>Claude Code 的入口约定，无实际逻辑</td>
+      </tr>
+      <tr>
+        <td class="path">README.md</td><td><span class="ln">239</span></td>
+        <td>项目定位、快速开始、目录结构、FAQ（含接第三方 OpenAI 兼容网关的方法）</td>
+        <td>对外门面。改依赖或启动方式时同步这里，否则新人第一小时就卡住</td>
+      </tr>
+      <tr>
+        <td class="path">SECURITY.md</td><td><span class="ln">37</span></td>
+        <td>漏洞上报渠道与支持版本</td>
+        <td>模板文件，按需改联系人</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>工程流水线（4 个文件）</h4>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:220px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="path">.pre-commit-config.yaml</td><td><span class="ln">43</span></td>
+        <td>提交前钩子：去尾空格、YAML/TOML 校验、大文件拦截、禁提交 master、<b>detect-secrets 扫密钥</b>、ruff fix+format、pyright</td>
+        <td><code>detect-secrets</code> 依赖 <code>.secrets.baseline</code>；<code>pyright</code> 用 <code>language: system</code>，要求本机 uv 可用</td>
+      </tr>
+      <tr>
+        <td class="path">.github/workflows/ci.yaml</td><td><span class="ln">19</span></td>
+        <td>PR / push master 时跑：<code>uv sync --all-extras --all-groups</code> → ruff check → ruff format --check → pyright</td>
+        <td><b>不跑测试</b>（仓库里没有 tests/）。要加测试，这里是入口</td>
+      </tr>
+      <tr>
+        <td class="path">.github/workflows/deploy.yaml</td><td><span class="ln">45</span></td>
+        <td>push master 时 <code>make docker-build ENV=production</code>，登录 Docker Hub 推镜像</td>
+        <td>依赖 secrets：DOCKER_USERNAME / DOCKER_PASSWORD；无 secrets 时只构建不推送</td>
+      </tr>
+      <tr>
+        <td class="path">typings/</td><td><span class="ln">—</span></td>
+        <td>pyright 的 <code>stubPath</code>，放第三方库的本地类型补丁</td>
+        <td>目前为空；某个库类型不全时把 <code>.pyi</code> 放这里</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ---------------- 入口与 API ---------------- -->
+  <h3>2.2 入口与 HTTP 层（4 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:200px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点 / 联动</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="path">app/main.py</td><td><span class="ln">208</span></td>
+        <td>FastAPI 实例、lifespan（缓存 / 图 / 记忆三处预热）、6 个中间件挂载顺序、限流异常处理、校验异常美化、<code>/</code> 与 <code>/health</code></td>
+        <td>顶部那段 <code>WindowsSelectorEventLoopPolicy</code> 是给 Windows + psycopg 的补丁；<code>/health</code> 在 DB 不通时返回 <b>503</b>（给 LB 摘流用）。中间件注册顺序 = 请求穿过顺序的<b>倒序</b></td>
+      </tr>
+      <tr>
+        <td class="path">app/api/v1/api.py</td><td><span class="ln">28</span></td>
+        <td>把 auth / chatbot 两个 router 挂到 <code>/api/v1</code>，另有一个不查库的 <code>/api/v1/health</code></td>
+        <td>两套 health 分工：<code>/health</code>（带 DB 检查，给运维）和 <code>/api/v1/health</code>（纯存活）。新增模块在这里挂</td>
+      </tr>
+      <tr>
+        <td class="path">app/api/v1/auth.py</td><td><span class="ln">368</span></td>
+        <td>注册、登录（<b>form 表单不是 JSON</b>）、建会话、会话改名、删会话、列会话；两个鉴权依赖 <code>get_current_user</code> / <code>get_current_session</code></td>
+        <td>每个路由都挂限流；登录字段走 <code>Form</code> 而非 JSON；改名/删除会校验「只能动自己的 session」（403）。<b>token 的 sub 有时是 user_id 有时是 session_id</b>，靠调用哪个依赖决定</td>
+      </tr>
+      <tr>
+        <td class="path">app/api/v1/chatbot.py</td><td><span class="ln">194</span></td>
+        <td><code>POST /chat</code>、<code>POST /chat/stream</code>（SSE）、<code>GET/DELETE /messages</code></td>
+        <td><b>模块级单例</b> <code>agent = LangGraphAgent()</code>——全进程共用一张编译好的图；流式接口手写 <code>data: {...}\n\n</code> 的 SSE 帧，业务异常也塞进 SSE 而不是换 HTTP 状态码</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ---------------- core ---------------- -->
+  <h3>2.3 core：横切能力（13 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:216px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点 / 联动</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="path">core/config.py</td><td><span class="ln">392</span></td>
+        <td>环境识别、env 文件优先级加载、<b>pydantic-settings 的 <code>Settings</code> 模型</b>（字段即配置、导入即类型校验）、按环境覆盖默认值</td>
+        <td><b>导入即校验 JWT</b>（≥32 字符 + 弱值黑名单），所以任何脚本都得先有合法密钥；env 文件优先级 <code>.env.{env}.local &gt; .env.{env} &gt; .env.local &gt; .env</code></td>
+      </tr>
+      <tr>
+        <td class="path">core/logging.py</td><td><span class="ln">261</span></td>
+        <td>structlog 配置：双输出（终端 + 按天 JSONL 文件）、console/JSON 两种渲染、<code>contextvars</code> 存 request 上下文、自动注入 request_id 与文件行号</td>
+        <td><b>模块导入即执行 setup</b>，是全项目最早跑起来的模块；<code>bind_context/clear_context</code> 靠 contextvar，asyncio 下天然按协程隔离</td>
+      </tr>
+      <tr>
+        <td class="path">core/middleware.py</td><td><span class="ln">212</span></td>
+        <td>三个中间件：<code>MetricsMiddleware</code>（QPS/耗时）、<code>LoggingContextMiddleware</code>（解 JWT 拿 session_id 进日志）、<code>ProfilingMiddleware</code>（pyinstrument + tracemalloc，超阈值落 JSON）</td>
+        <td>Profiling 只在 <code>DEBUG=true</code> 挂载；它在每个请求上开 tracemalloc，<b>生产环境别开</b>；日志上下文在 finally 里必清，否则串请求</td>
+      </tr>
+      <tr>
+        <td class="path">core/metrics.py</td><td><span class="ln">54</span></td>
+        <td>7 个指标：HTTP 计数/耗时、DB 连接数、订单数(模板残留)、LLM 推理/流式耗时、会话命名次数 + <code>setup_metrics(app)</code></td>
+        <td><code>orders_processed</code> 是模板遗留，业务里没人用，可删；<code>/metrics</code> 由 <code>starlette_prometheus</code> 直接挂路由</td>
+      </tr>
+      <tr>
+        <td class="path">core/observability.py</td><td><span class="ln">43</span></td>
+        <td>Langfuse 初始化 + <code>langfuse_callback_handler</code> 单例</td>
+        <td>模块导入时 <b>就会建 handler</b>，即使 tracing 关闭；<code>auth_check()</code> 失败只 warning，不阻断启动</td>
+      </tr>
+      <tr>
+        <td class="path">core/cache.py</td><td><span class="ln">215</span></td>
+        <td>两套同签名实现（<code>RedisCacheService</code> / <code>InMemoryCacheService</code>）、<code>cache_key()</code> 做 sha256 短哈希、模块级单例工厂</td>
+        <td><b>后端在导入时定死</b>：配了 <code>REDIS_HOST</code> 且能 import redis 才走 Redis。Redis 方法内部 try/except 全吞异常——缓存坏了不影响主流程，这是有意的</td>
+      </tr>
+      <tr>
+        <td class="path">core/limiter.py</td><td><span class="ln">39</span></td>
+        <td>slowapi <code>Limiter</code>，key 用客户端 IP，storage 拼成 <code>redis://:pwd@host:port/db</code></td>
+        <td>密码要 <code>quote()</code>——含 <code>@</code> 会解析错 host；没 Redis 时 <code>storage_uri=None</code>，退化成<b>进程内计数</b>，多副本时限流会被放大 N 倍</td>
+      </tr>
+      <tr>
+        <td class="path">core/langgraph/graph.py</td><td><span class="ln">472</span></td>
+        <td>全项目最核心：连接池、<code>_chat</code> 节点、<code>_tool_call</code> 节点（并发执行工具）、<code>create_graph</code>（编译 + setup 建表）、非流式/流式两种入口、历史读取、按 thread 清历史</td>
+        <td>节点用 <code>Command(goto=...)</code> 而不是 <code>add_edge</code>，路由在节点内部决定；<b>没有 checkpointer 就抛异常不降级</b>；<code>get_response</code> 里状态检查与记忆检索并发</td>
+      </tr>
+      <tr>
+        <td class="path">core/langgraph/tools/__init__.py</td><td><span class="ln">13</span></td>
+        <td>导出 <code>tools</code> 列表：DuckDuckGo + ask_human</td>
+        <td>加新工具就在这里 append，<code>bind_tools</code> 与 <code>tools_by_name</code> 都源自它</td>
+      </tr>
+      <tr>
+        <td class="path">core/langgraph/tools/ask_human.py</td><td><span class="ln">26</span></td>
+        <td>Human-in-the-loop：调 <code>interrupt(question)</code> 暂停图，等人工回复</td>
+        <td>依赖 checkpointer 才能恢复；恢复靠 <code>Command(resume=...)</code>，graph.py 里已处理</td>
+      </tr>
+      <tr>
+        <td class="path">core/langgraph/tools/duckduckgo_search.py</td><td><span class="ln">10</span></td>
+        <td>包一层 <code>DuckDuckGoSearchResults(num_results=10)</code></td>
+        <td>需要外网；<code>handle_tool_error=True</code> 让搜索失败变成工具返回文本而不是抛异常</td>
+      </tr>
+      <tr>
+        <td class="path">core/prompts/__init__.py</td><td><span class="ln">39</span></td>
+        <td><b>模块加载时一次性读三份 md</b>（避免每请求 IO），提供 <code>load_system_prompt</code> / <code>load_memory_capture_prompt</code></td>
+        <td>用 <code>.format()</code> 填系统提示词——模板里出现裸 <code>{}</code> 会炸；记忆提示词改用 <code>.replace()</code> 正是因为它含 JSON 花括号</td>
+      </tr>
+      <tr>
+        <td class="path">core/prompts/system.md</td><td><span class="ln">15</span></td>
+        <td>系统提示词模板：角色、三条纪律、<code>{user_context}</code>、<code>{long_term_memory}</code>、<code>{current_date_and_time}</code></td>
+        <td>三个占位符必须保留，否则 <code>load_system_prompt</code> 传参多余、渲染报错</td>
+      </tr>
+      <tr>
+        <td class="path">core/prompts/session_title.md</td><td><span class="ln">10</span></td>
+        <td>会话标题生成指令：3–6 词、跟随用户语言、不要引号前缀</td>
+        <td>末尾的 <code>{user_message}</code> 是死文本——<code>_persist_session_name</code> 直接把用户消息作为 HumanMessage 传，不渲染这个占位符</td>
+      </tr>
+      <tr>
+        <td class="path">core/prompts/memory_capture.md</td><td><span class="ln">56</span></td>
+        <td>mem0 的事实抽取提示词：只抽「稳定事实」，不抽问题、不抽助手说过的、不推断敏感属性</td>
+        <td>直接决定长期记忆的质量。改这里比改任何代码都更能影响「AI 是否记得我」</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ---------------- 领域 ---------------- -->
+  <h3>2.4 models：表定义（5 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:200px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td class="path">models/base.py</td><td><span class="ln">10</span></td><td><code>BaseModel(SQLModel)</code>，只提供 <code>created_at</code></td><td>时间用 UTC，<code>datetime.now(UTC)</code>；要加 <code>updated_at</code> 就加这儿</td></tr>
+      <tr><td class="path">models/user.py</td><td><span class="ln">51</span></td><td>用户表：id / email(unique+index) / hashed_password / username；自带 bcrypt 哈希与校验</td><td>文件末尾 <b>故意再 import Session</b> 解循环依赖（配 <code>noqa: E402</code>）；密码用 bcrypt 直调，没走 passlib</td></tr>
+      <tr><td class="path">models/session.py</td><td><span class="ln">36</span></td><td>会话表：id(str PK) / user_id(FK) / name / username</td><td><code>name</code> 初始为空串——"空串"就是「还没命名」的标记，被 <code>UPDATE ... WHERE name=''</code> 原子抢占</td></tr>
+      <tr><td class="path">models/thread.py</td><td><span class="ln">24</span></td><td>线程表：id + created_at</td><td><b>实际没人用</b>，历史遗留（早期用 thread 表存会话）。迁移里建了，可以删但要配套迁移</td></tr>
+      <tr><td class="path">models/database.py</td><td><span class="ln">5</span></td><td>只做 re-export：<code>from .thread import Thread</code></td><td>空的聚合层，真正的模型都在各自文件里</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>2.5 schemas：出入参与图状态（5 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:200px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td class="path">schemas/base.py</td><td><span class="ln">22</span></td><td><code>BaseResponse</code>：自动从 correlation-id 的 contextvar 取 <code>request_id</code></td><td>所有响应都带 request_id，日志与响应能对账；取不到则 uuid4 兜底</td></tr>
+      <tr><td class="path">schemas/auth.py</td><td><span class="ln">135</span></td><td>Token / TokenResponse / UserCreate / UserResponse / SessionResponse</td><td>密码强度在两处重复校验（这里 + <code>utils/sanitization</code>）；<code>SessionResponse.name</code> 会正则剥掉 <code>&lt;&gt;{}[]()'"`</code></td></tr>
+      <tr><td class="path">schemas/chat.py</td><td><span class="ln">107</span></td><td>Message（1–3000 字 + 拒 script/null）、ChatRequest、ChatResponse、StreamResponse、SessionTitle</td><td><b>3000 字上限</b>就是单条消息的硬边界；<code>SessionTitle</code> 会归一化空白与首尾标点</td></tr>
+      <tr><td class="path">schemas/graph.py</td><td><span class="ln">18</span></td><td><code>GraphState</code>：<code>messages</code>（用 <code>add_messages</code> reducer 追加）+ <code>long_term_memory</code></td><td><code>Annotated[list, add_messages]</code> 是消息能累积的关键；不加 reducer 每次都会覆盖</td></tr>
+      <tr><td class="path">schemas/__init__.py</td><td><span class="ln">21</span></td><td>统一导出，方便 <code>from app.schemas import GraphState, Message</code></td><td>新增 schema 记得加进来，别处都从这个包导入</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ---------------- services ---------------- -->
+  <h3>2.6 services：业务服务（6 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:216px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点 / 坑</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="path">services/database.py</td><td><span class="ln">256</span></td>
+        <td>SQLModel <code>create_engine</code> + QueuePool，用户/会话 CRUD，<code>health_check()</code></td>
+        <td><b>方法是 async 但内部是同步阻塞调用</b>（<code>with Session(engine)</code>）——单机够用，高并发会占满事件循环。DSN 用 <code>quote_plus</code> 编码密码</td>
+      </tr>
+      <tr>
+        <td class="path">services/llm/registry.py</td><td><span class="ln">170</span></td>
+        <td>4 个模型配置预建实例；<code>_build_llm</code> 按 <code>gpt-*</code> 或 <code>provider:model</code> 推断提供方；支持 kwargs 覆盖新建实例</td>
+        <td><b>模型名硬编码在 <code>LLM_CONFIGS</code></b>，不读 <code>DEFAULT_LLM_MODEL</code>；注释说明这些都是 reasoning 模型，别传 <code>top_p</code>/<code>penalty</code>，会被 400 拒</td>
+      </tr>
+      <tr>
+        <td class="path">services/llm/service.py</td><td><span class="ln">364</span></td>
+        <td>两条调用路径（默认工具绑定模型 / 一次性覆盖模型）、tenacity 指数退避、环形 fallback、总超时、结构化输出</td>
+        <td>默认路径换模型会 <b>重新 bind_tools</b>；一次性路径绝不改 <code>self._llm</code>，避免并发互相污染；<code>TypeError/AttributeError/KeyError</code> 直接抛不重试（编程错误换模型也没用）</td>
+      </tr>
+      <tr>
+        <td class="path">services/llm/__init__.py</td><td><span class="ln">6</span></td>
+        <td>导出 <code>LLMRegistry</code> / <code>LLMService</code> / <code>llm_service</code></td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td class="path">services/memory.py</td><td><span class="ln">119</span></td>
+        <td>mem0 <code>AsyncMemory.from_config</code>：vector_store=pgvector、llm=openai、embedder=openai；<code>search</code> 带 Redis 缓存，<code>add</code> 只送最后一条用户消息</td>
+        <td><b>embedding 模型必须存在</b>（<code>text-embedding-3-small</code>）——换国产网关时这里最容易静默失败；<code>user_id=None</code>（匿名）直接跳过，避免共用分区</td>
+      </tr>
+      <tr>
+        <td class="path">services/session_naming.py</td><td><span class="ln">86</span></td>
+        <td>会话自动命名：先写占位名（用户首句前 40 字），再后台调 nano 模型生成正式标题覆盖</td>
+        <td>并发去重靠 <code>UPDATE ... WHERE name=''</code> 的 rowcount==1；<b>强行指定 <code>gpt-5.4-nano</code></b>，注册表里没有会直接失败</td>
+      </tr>
+      <tr>
+        <td class="path">services/__init__.py</td><td><span class="ln">9</span></td>
+        <td>导出 database_service / LLMRegistry / llm_service</td>
+        <td>注意：<b>没导出 memory_service</b>，用的时候要从 <code>app.services.memory</code> 直接导</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ---------------- utils ---------------- -->
+  <h3>2.7 utils：纯函数（5 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:200px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td class="path">utils/auth.py</td><td><span class="ln">85</span></td><td>JWT 签发（sub/exp/iat/jti）与校验；先用正则检查三段式格式再 decode</td><td>校验失败返回 None 或抛 <code>ValueError</code>，调用方按不同状态码处理（401 vs 422）</td></tr>
+      <tr><td class="path">utils/graph.py</td><td><span class="ln">156</span></td><td>tiktoken 本地计数、<code>trim_messages</code> 尾部裁剪、消息 dump、结构化 content 提取、<code>prepare_messages</code> 插系统提示</td><td>裁剪用 <code>max_tokens=settings.MAX_TOKENS</code>，<b>和输出上限共用同一个值</b>——长上下文场景要拆成两个变量；含 reasoning block 时裁剪会失败并降级为不裁</td></tr>
+      <tr><td class="path">utils/sanitization.py</td><td><span class="ln">127</span></td><td>HTML 转义、去 script/空字节、邮箱校验、dict/list 递归清洗、密码强度</td><td>对 token 也做 <code>sanitize_string</code>——会把 <code>&amp;</code> 转义，好在 JWT 字符集里没有它</td></tr>
+      <tr><td class="path">utils/tasks.py</td><td><span class="ln">23</span></td><td><code>create_background_task</code>：fire-and-forget 且持强引用</td><td>asyncio 只存弱引用，不持有会被 GC 掉——这是必须的写法，不是多余代码</td></tr>
+      <tr><td class="path">utils/__init__.py</td><td><span class="ln">17</span></td><td>导出 5 个消息处理函数</td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ---------------- 迁移 / 评测 / 运维 ---------------- -->
+  <h3>2.8 alembic：迁移（3 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:220px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td class="path">alembic/env.py</td><td><span class="ln">100</span></td><td>从 settings 拼 DSN、设 <code>sqlalchemy.url</code>、<code>target_metadata=SQLModel.metadata</code>、过滤外部表</td><td>两个必须记住的细节：<code>quote_plus</code> 编码密码（含 <code>@</code> 会解析错 host）+ <code>.replace("%","%%")</code>（configparser 插值）；<code>EXCLUDE_TABLES</code> 防止 autogenerate 去删 checkpoint/mem0 的表</td></tr>
+      <tr><td class="path">alembic/script.py.mako</td><td><span class="ln">29</span></td><td>新迁移文件的模板</td><td><code>alembic.ini</code> 里配了 ruff hook，生成后自动格式化</td></tr>
+      <tr><td class="path">alembic/versions/b25d38b0cd7c_initial_schema.py</td><td><span class="ln">58</span></td><td>初始迁移：user / session / thread 三表 + email 唯一索引</td><td><b>唯一要手动跑的一次迁移</b>；后续 <code>make migration MSG=...</code> autogenerate</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>2.9 evals：LLM 质量评测（10 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:240px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td class="path">evals/main.py</td><td><span class="ln">268</span></td><td>CLI：<code>--interactive</code> / <code>--quick</code> / <code>--no-report</code>，彩色输出、汇总表</td><td>入口要 <code>python -m evals.main</code>；Makefile 的 <code>eval*</code> 目标帮你带好环境变量</td></tr>
+      <tr><td class="path">evals/evaluator.py</td><td><span class="ln">219</span></td><td>拉 Langfuse 近 24h 且无评分的 trace → 逐指标调评测模型 → 评分回写 Langfuse</td><td><b>强依赖 Langfuse</b>：没有 key 或 tracing 关闭时拿到空列表，跑出来是 0 条；每条 trace 之间有 <code>sleep</code> 防限流</td></tr>
+      <tr><td class="path">evals/helpers.py</td><td><span class="ln">198</span></td><td>消息格式化、报告结构初始化、成功/失败计数、平均分、JSON 落盘到 <code>evals/reports/</code></td><td>报告是快照式统计，不做趋势对比；要趋势自己接 Langfuse 看板</td></tr>
+      <tr><td class="path">evals/schemas.py</td><td><span class="ln">13</span></td><td><code>ScoreSchema</code>：0–1 分 + 一句话理由</td><td>结构化输出用它，所以评测模型必须支持 JSON schema</td></tr>
+      <tr><td class="path">evals/metrics/__init__.py</td><td><span class="ln">11</span></td><td>扫描 <code>prompts/*.md</code> 自动组成指标列表</td><td>丢一个 md 进去就多一个指标，无需改代码</td></tr>
+      <tr><td class="path">evals/metrics/prompts/conciseness.md</td><td><span class="ln">24</span></td><td>简洁性评分标准</td><td rowspan="5">五个内置维度：简洁、幻觉、有用性、相关性、毒性。<b>评分口径写死在 md 里</b>，改标准改文件即可</td></tr>
+      <tr><td class="path">evals/metrics/prompts/hallucination.md</td><td><span class="ln">24</span></td><td>幻觉（无依据编造）评分标准</td></tr>
+      <tr><td class="path">evals/metrics/prompts/helpfulness.md</td><td><span class="ln">25</span></td><td>有用性评分标准</td></tr>
+      <tr><td class="path">evals/metrics/prompts/relevancy.md</td><td><span class="ln">25</span></td><td>相关性评分标准</td></tr>
+      <tr><td class="path">evals/metrics/prompts/toxicity.md</td><td><span class="ln">25</span></td><td>毒性评分标准</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>2.10 运维与文档（16 个文件）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:250px">文件</th><th style="width:52px">行</th><th>职责</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td class="path">scripts/set_env.sh</td><td><span class="ln">151</span></td><td>被 <code>source</code> 用：加载 <code>.env.$ENV</code>、校验 JWT、导出 <code>start_app</code> 与三个 alias</td><td>开发环境缺文件会自动从 <code>.env.example</code> 复制；staging/prod 不给这个便利，缺文件直接拒绝启动</td></tr>
+      <tr><td class="path">scripts/docker-entrypoint.sh</td><td><span class="ln">85</span></td><td>容器入口：逐行解析 .env（已存在的环境变量优先），强校验 <code>JWT_SECRET_KEY</code> 与 <code>OPENAI_API_KEY</code>，然后 exec 真正的命令</td><td><b>缺 OPENAI_API_KEY 会直接 exit 1</b>——容器起来又秒退，先看这里；它<b>不跑迁移</b>，要靠 <code>make docker-migrate</code></td></tr>
+      <tr><td class="path">scripts/build-docker.sh</td><td><span class="ln">70</span></td><td>带掩码日志地构建镜像</td><td>它用 <code>--build-arg</code> 传密钥，但 <b>Dockerfile 里没有对应 ARG</b>——实际不生效且会留在构建元数据里，属于该清理的地方</td></tr>
+      <tr><td class="path">prometheus/prometheus.yml</td><td><span class="ln">14</span></td><td>抓 <code>app:8000/metrics</code> 和 <code>cadvisor:8080</code>，15s 间隔</td><td>只在 compose 网络内有效；本地直跑要改成 <code>host.docker.internal:8000</code></td></tr>
+      <tr><td class="path">grafana/dashboards/dashboards.yml</td><td><span class="ln">11</span></td><td>Grafana provisioning：从 <code>/etc/grafana/provisioning/dashboards/json</code> 加载看板</td><td><code>json/</code> 目录目前是空的——<b>开箱没有现成看板</b>，要自己建后导出</td></tr>
+      <tr><td class="path">docs/getting-started.md</td><td><span class="ln">120</span></td><td>Docker / 本地两条启动路径、首个 API 调用、自定义 Agent、排障</td><td>新人入口，跟着走一遍最快</td></tr>
+      <tr><td class="path">docs/architecture.md</td><td><span class="ln">127</span></td><td>系统总览、请求生命周期、图结构、关键设计决策</td><td>与本手册第 1 节互补，可对着看</td></tr>
+      <tr><td class="path">docs/authentication.md</td><td><span class="ln">110</span></td><td>JWT 流程、端点清单、安全说明</td><td>解释 user token 与 session token 的区别</td></tr>
+      <tr><td class="path">docs/configuration.md</td><td><span class="ln">131</span></td><td>全部环境变量按域分组列表</td><td>加新变量必须同步这里</td></tr>
+      <tr><td class="path">docs/database.md</td><td><span class="ln">96</span></td><td>表结构、Alembic 用法、<b>外部库怎么装 pgvector</b></td><td>接 Supabase/云 PG 必读第 88 行那段 <code>CREATE EXTENSION</code></td></tr>
+      <tr><td class="path">docs/docker.md</td><td><span class="ln">84</span></td><td>服务拓扑、命令、容器内迁移、环境文件、Grafana</td><td>讲清了「Valkey→Redis 后 app 只 depends_on db」这件事</td></tr>
+      <tr><td class="path">docs/memory.md</td><td><span class="ln">70</span></td><td>长期记忆时序图、缓存层、更新策略、按用户隔离</td><td>解释「为什么只送用户消息给 mem0」</td></tr>
+      <tr><td class="path">docs/llm-service.md</td><td><span class="ln">114</span></td><td>注册表结构、重试与降级语义、工具绑定、结构化输出、加模型的方法</td><td>接国产模型看这里最省事</td></tr>
+      <tr><td class="path">docs/observability.md</td><td><span class="ln">131</span></td><td>Langfuse、structlog 规范、Prometheus 指标、剖面、request_id 传播</td><td>日志「小写下划线事件名」的规矩出处</td></tr>
+      <tr><td class="path">docs/evaluation.md</td><td><span class="ln">80</span></td><td>评测怎么跑、内置指标、加自定义指标、报告格式</td><td>—</td></tr>
+      <tr><td class="path">docs/*.png</td><td><span class="ln">2</span></td><td>两张架构/流程图</td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="box note">
+    <span class="t">小结：真正"承重"的只有 9 个文件</span>
+    <p><code>main.py</code>、<code>core/config.py</code>、<code>core/logging.py</code>、<code>core/langgraph/graph.py</code>、
+    <code>services/llm/service.py</code>、<code>services/database.py</code>、<code>services/memory.py</code>、
+    <code>api/v1/auth.py</code>、<code>api/v1/chatbot.py</code>。
+    其余要么是它们的配置，要么是它们的出入参，要么是工程化外壳。读懂这 9 个，项目就没有黑盒了。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="build">
+  <h2><span class="num">3</span>搭建路线：按中间件引入，10 步一次到位</h2>
+
+  <p class="lede">
+    顺序不是随便排的。原则只有一条：<b>每一步只引入一个新外部依赖，且这一步结束时系统能独立验收。</b>
+    这样任何一步出问题，你只需要怀疑「刚加的那一个东西」。
+  </p>
+
+  <div class="panel" style="padding:16px 20px">
+    <b>引入顺序与理由</b>
+    <table style="margin-top:8px">
+      <thead><tr><th style="width:110px">阶段</th><th style="width:150px">引入什么</th><th>为什么必须是这个位置</th></tr></thead>
+      <tbody>
+        <tr><td>0 骨架</td><td>uv / Python 3.13</td><td>后面每个依赖都靠它锁版本</td></tr>
+        <tr><td>1 地基</td><td>配置 + 结构化日志</td><td>配置导入即校验，日志是所有排障的眼睛——晚于任何服务都会让你盲调</td></tr>
+        <tr><td>2 存储</td><td>PostgreSQL + Alembic</td><td>三张业务表先立起来；checkpoint 与向量表后面才来，但都落这一个库</td></tr>
+        <tr><td>3 身份</td><td>JWT</td><td>会话是聊天的前置；没有 session_id 就没有 <code>thread_id</code></td></tr>
+        <tr><td>4 模型</td><td>LLM</td><td>先能稳定调通一次模型，再去谈编排</td></tr>
+        <tr><td>5 编排</td><td>LangGraph + checkpointer</td><td>图需要 thread_id（来自 3）和模型（来自 4）</td></tr>
+        <tr><td>6 接口</td><td>Chat API + SSE</td><td>到这一步才第一次有端到端闭环</td></tr>
+        <tr><td>7 记忆</td><td>mem0 + pgvector</td><td>依赖 2 的库和 4 的 embedding，且是「锦上添花」，坏了不影响主链路</td></tr>
+        <tr><td>8 缓存/限流</td><td>Redis</td><td>纯性能与安全增强，前面没有它也能跑</td></tr>
+        <tr><td>9 可观测</td><td>Prometheus / Langfuse / 剖面</td><td>要先有东西可观测；顺序反了就是空转</td></tr>
+        <tr><td>10 交付</td><td>Docker / CI / 评测</td><td>最后固化，避免早期反复重建镜像</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="box ok">
+    <span class="t">关于 Docker</span>
+    <p>本机没装 Docker 也完全可以走完 0–9 步：第 2 步用一个已有的 PostgreSQL（比如你那台阿里云，建独立库跑），
+    第 8 步用一个已有 Redis 的非 0 号库。第 10 步的镜像构建可以最后再补。</p>
+  </div>
+
+  <!-- ===================== STEP 0 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">0</div>
+      <div class="title">骨架：让空项目能被 uv 管起来
+        <small>只装 Python 与包管理器，不写业务代码</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>产出</b> pyproject.toml / .python-version / .env.example 骨架</span><span><b>耗时</b> 10 分钟</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>mkdir fly-agent &amp;&amp; cd fly-agent
+uv init --python 3.13 --no-workspace
+mkdir -p app/{api/v1,core/langgraph/tools,core/prompts,models,schemas,services/llm,utils} \
+         alembic/versions docker/initdb scripts docs
+
+# 每层给个 __init__.py，避免后面 import 找不到包
+find app -type d -exec touch {}/__init__.py \;
+uv add fastapi "uvicorn[standard]"</code></pre></div>
+
+      <p>此时 <code>pyproject.toml</code> 只需保证一件事：<code>requires-python = "&gt;=3.13"</code>。
+      后面的依赖<b>不要一次性全写进去</b>，跟着步骤 <code>uv add</code>——这样你永远知道哪个包是为哪一步引入的。</p>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 0</span>
+        <p><code>uv run python -c "import fastapi, sys; print(sys.version.split()[0], fastapi.__version__)"</code><br>
+        输出 <code>3.13.x 0.1xx.x</code> 才算过。报 <code>requires-python</code> 错误说明 uv 没拉对解释器。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 1 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">1</div>
+      <div class="title">地基：配置层 + 结构化日志
+        <small>第一个"中间件级"组件，虽然没有网络端口</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> core/config.py · core/logging.py · .env.example</span><span><b>依赖</b> python-dotenv structlog asgi-correlation-id</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add python-dotenv structlog asgi-correlation-id</code></pre></div>
+
+      <h4>1.1 配置层要做的四件事</h4>
+      <ol>
+        <li><b>认环境</b>：<code>APP_ENV</code> → <code>Environment</code> 枚举（development / staging / production / test）。</li>
+        <li><b>找文件</b>：按 <code>.env.{env}.local → .env.{env} → .env.local → .env</code> 顺序，取第一个存在的。</li>
+        <li><b>读变量</b>：一个 <code>Settings.__init__</code> 里逐项 <code>os.getenv</code>，带默认值。</li>
+        <li><b>强校验</b>：JWT 密钥短于 32 字符或命中弱值黑名单，<b>直接抛 RuntimeError</b>。</li>
+      </ol>
+
+      <div class="box warn">
+        <span class="t">这一步最容易做错的决定：校验放在哪</span>
+        <p>放在 <code>Settings.__init__</code> 里，意味着 <code>from app.core.config import settings</code> 时就会炸。
+        好处是<b>任何入口（uvicorn、alembic、脚本）都逃不过</b>；代价是你必须先准备好密钥才能跑迁移。
+        这个项目选了后者——所以排障时「import 就报错」不是 bug，是设计。</p>
+      </div>
+
+      <h4>1.2 日志层：一个 logger 就够，但要带三样东西</h4>
+      <div class="codewrap"><div class="lang">python</div><pre><code># app/core/logging.py 的三段结构
+# ① 处理器：终端 + 按天 JSONL 文件
+# ② processors 链：时间戳 → 异常栈 → 上下文 → request_id → 文件行号 → 环境
+# ③ 渲染器：LOG_FORMAT=console 用 ConsoleRenderer，否则 JSONRenderer
+logger = structlog.get_logger()
+
+# 用法固定：事件名小写下划线，变量走 kwargs，绝不 f-string
+logger.info("chat_request_received", session_id=session.id, message_count=len(messages))</code></pre></div>
+
+      <p><code>contextvars</code> 是关键：<code>bind_context(user_id=...)</code> 只在<b>当前协程</b>生效，
+      并发请求之间不会串味。这也是为什么 <code>LoggingContextMiddleware</code> 在 finally 里必须 <code>clear_context()</code>。</p>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 1</span>
+        <p>① <code>uv run python -c "from app.core.config import settings; print(settings.PROJECT_NAME, settings.ENVIRONMENT)"</code><br>
+        ② 故意把 <code>JWT_SECRET_KEY</code> 设成 <code>short</code>，再跑一次，<b>必须</b>看到
+        <code>RuntimeError: JWT_SECRET_KEY must be at least 32 characters long</code>。<br>
+        ③ 跑完后 <code>logs/development-YYYY-MM-DD.jsonl</code> 里应该有 <code>logging_initialized</code> 这一行。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 2 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">2</div>
+      <div class="title">PostgreSQL：三张业务表 + 第一个 /health
+        <small>整个项目最重的一块地基，别赶</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> models/* · services/database.py · alembic/*</span><span><b>依赖</b> sqlmodel psycopg[binary] psycopg2-binary alembic</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add sqlmodel "psycopg[binary]" psycopg2-binary alembic
+
+# 方案 A：本机 Docker（有 docker 才用）
+docker compose -f docker-compose.datastores.yml up -d
+# 方案 B：用现有 PG，先建独立库（别拿生产库试）
+#   createdb -h &lt;host&gt; -p &lt;port&gt; -U &lt;user&gt; fly_agent_dev
+#   psql ... -c 'CREATE EXTENSION IF NOT EXISTS vector'</code></pre></div>
+
+      <h4>2.1 先定表，再定迁移</h4>
+      <div class="codewrap"><div class="lang">python</div><pre><code>class User(BaseModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    email: str = Field(unique=True, index=True)
+    hashed_password: str
+    username: Optional[str] = Field(default=None)
+    sessions: List["Session"] = Relationship(back_populates="user")
+
+class Session(BaseModel, table=True):
+    id: str = Field(primary_key=True)          # uuid 字符串，不递增
+    user_id: int = Field(foreign_key="user.id")
+    name: str = Field(default="")               # 空串 = 还没命名
+    username: Optional[str] = Field(default=None)  # 冗余一份，省一次 join</code></pre></div>
+
+      <p>两个建模决定值得抄：<b>session.id 用 uuid 字符串</b>（等于 LangGraph 的 <code>thread_id</code>，不暴露自增序号）；
+      <b>session.username 冗余</b>（拼系统提示词时不想再查 user 表）。</p>
+
+      <h4>2.2 Alembic 的三处非默认配置</h4>
+      <div class="codewrap"><div class="lang">python</div><pre><code># alembic/env.py —— 这三行是整个迁移能否跑通的关键
+DATABASE_URL = (
+    f"postgresql://{quote_plus(settings.POSTGRES_USER)}:{quote_plus(settings.POSTGRES_PASSWORD)}"
+    f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+)
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
+target_metadata = SQLModel.metadata
+
+EXCLUDE_TABLES = {"checkpoint_blobs","checkpoint_writes","checkpoint_migrations",
+                  "checkpoints","longterm_memory","mem0migrations"}   # autogenerate 别碰</code></pre></div>
+
+      <div class="box bad">
+        <span class="t">两个必踩的坑，已在代码里修掉</span>
+        <p><b>① 密码含 <code>@</code></b>：直接拼字符串会把 host 解析成 <code>postgres@47.x.x.x</code>，报「host 不存在」。
+        必须 <code>quote_plus</code>。<br>
+        <b>② 编码后的 <code>%40</code> 又被 configparser 当插值符</b>：<code>set_main_option</code> 走 configparser，
+        必须再把 <code>%</code> 转成 <code>%%</code>。这两步缺一个都起不来。</p>
+      </div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv run alembic revision --autogenerate -m "initial schema"
+uv run alembic upgrade head</code></pre></div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 2</span>
+        <p>① <code>alembic upgrade head</code> 无报错；<br>
+        ② 查库能看到 <code>user / session / thread / alembic_version</code> 四张表；<br>
+        ③ 起服务 <code>uv run uvicorn app.main:app --port 8000</code>，<code>GET /health</code> 返回
+        <code>200</code> 且 <code>components.database = "healthy"</code>；<br>
+        ④ 把 PG 停掉再请求，<b>必须</b>返回 <code>503</code>（而不是 200 假装健康）——这条是给负载均衡用的，别省。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 3 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">3</div>
+      <div class="title">身份：JWT + 两套鉴权依赖
+        <small>聊天接口的前置条件</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> utils/auth.py · utils/sanitization.py · schemas/auth.py · api/v1/auth.py</span><span><b>依赖</b> python-jose[cryptography] bcrypt email-validator python-multipart</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add "python-jose[cryptography]" bcrypt "pydantic[email]" python-multipart</code></pre></div>
+
+      <h4>3.1 一级：user token → 二级：session token</h4>
+      <div class="codewrap"><div class="lang">text</div><pre><code>POST /auth/register   → 建 User，返回 UserResponse{token}         token.sub = user.id
+POST /auth/login      → 校验密码，返回 TokenResponse               token.sub = user.id
+POST /auth/session    → 建 Session(uuid)，返回 SessionResponse{token} token.sub = session_id
+     ↓
+之后所有 /chatbot/* 都带 session token，Depends(get_current_session) 直接拿到 Session 行</code></pre></div>
+
+      <p>同一个 <code>sub</code> 字段装两种东西，靠<b>调用哪个依赖</b>来区分：<code>get_current_user</code> 查 user 表，
+      <code>get_current_session</code> 查 session 表。这不是最优雅的设计，但很实用——省掉一个 claim。</p>
+
+      <div class="box warn">
+        <span class="t">登录接口是表单，不是 JSON</span>
+        <p><code>email/password/grant_type</code> 全部走 <code>Form(...)</code>，请求头必须是
+        <code>application/x-www-form-urlencoded</code>。用 JSON 打会得到 422「field required」——这是这个模板最常见的对接疑问。</p>
+      </div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>curl -X POST localhost:8000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"a@b.com","password":"Secret123!","username":"demo"}'
+
+curl -X POST localhost:8000/api/v1/auth/login \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'email=a@b.com&amp;password=Secret123!&amp;grant_type=password'
+
+curl -X POST localhost:8000/api/v1/auth/session -H "Authorization: Bearer &lt;user_token&gt;"</code></pre></div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 3</span>
+        <p>三个接口依次 200，库里 <code>user</code> 多一行、<code>session</code> 多一行。
+        拿 session token 打 <code>GET /api/v1/chatbot/messages</code> 应该返回 <code>{"messages":[]}</code>（空列表，不是 500）。
+        用 user token 打同一个接口应该 404（找不到 session）——<b>能区分这两种 token 才算真的通过</b>。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 4 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">4</div>
+      <div class="title">LLM：注册表 + 重试 + 环形降级
+        <small>先保证「一次调用能成」，再谈编排</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> services/llm/registry.py · services/llm/service.py</span><span><b>依赖</b> langchain langchain-core langchain-openai tenacity</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add langchain langchain-core langchain-openai tenacity</code></pre></div>
+
+      <h4>4.1 注册表：把「候选模型」写成一个有序列表</h4>
+      <div class="codewrap"><div class="lang">python</div><pre><code>LLM_CONFIGS = [
+    {"name": "main",     "model": "gpt-5.6-luna",  "kwargs": {...}},   # index 0 = 默认 & 降级链头
+    {"name": "backup",   "model": "gpt-5.4",       "kwargs": {...}},
+    {"name": "cheap",    "model": "gpt-5.4-mini",  "kwargs": {...}},
+    {"name": "cheapest", "model": "gpt-5.4-nano",  "kwargs": {...}},   # 环形，最后一个回到 index 0
+]
+# 换国产/第三方：只改 model 字符串为 "provider:model"，或给 openai 兼容网关传 base_url + api_key</code></pre></div>
+
+      <h4>4.2 服务层：两层容错，别混在一起</h4>
+      <table>
+        <thead><tr><th>层级</th><th>机制</th><th>管什么</th><th>不管什么</th></tr></thead>
+        <tbody>
+          <tr><td>内层</td><td>tenacity 指数退避（2–10s，默认 3 次）</td><td>限流、超时、API 5xx 这类「同一个模型再试一次可能好」</td><td>模型名错、参数错（编程错误直接抛）</td></tr>
+          <tr><td>外层</td><td>环形 fallback（遍历注册表）</td><td>当前模型彻底不可用 → 换下一个</td><td>不会重试同一个模型</td></tr>
+          <tr><td>最外层</td><td><code>asyncio.wait_for(60s)</code></td><td>整次调用（含所有重试与降级）的总预算</td><td>—</td></tr>
+        </tbody>
+      </table>
+
+      <div class="box warn">
+        <span class="t">两条路径别搞混</span>
+        <p><b>默认路径</b>（不传 model_name / response_format / kwargs）用 <code>self._llm</code>，它<b>绑过工具</b>。
+        换模型时必须重新 <code>bind_tools</code>，否则降级后模型不会调工具了。<br>
+        <b>一次性路径</b>（传了任一覆盖参数）每次都 <code>LLMRegistry.get(...)</code> 新建实例，<b>绝不碰 <code>self._llm</code></b>——
+        否则并发的聊天请求会被会话命名这类小任务「顺手改掉模型」。</p>
+      </div>
+
+      <div class="codewrap"><div class="lang">python</div><pre><code># 最小可用验证，不需要起服务
+import asyncio
+from app.services.llm import llm_service
+
+async def main():
+    r = await llm_service.call([{"role": "user", "content": "只回两个字：收到"}])
+    print(type(r).__name__, r.content)
+
+asyncio.run(main())</code></pre></div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 4</span>
+        <p>① 正常调用返回一条 <code>AIMessage</code>；<br>
+        ② 故意把 <code>OPENAI_API_KEY</code> 改错，日志里应依次出现
+        <code>llm_call_failed_retrying</code> → <code>switching_to_next_model</code> → 转完一圈
+        <code>all_models_failed</code>；<br>
+        ③ 确认最终错误是 <code>RuntimeError: failed to get response from llm after trying N models</code>，而不是裸的 401——
+        说明容错链路真的生效了。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 5 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">5</div>
+      <div class="title">LangGraph：两个节点的环 + checkpoint 落库
+        <small>项目的技术核心，也是最容易卡住的一步</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> schemas/graph.py · core/prompts/* · utils/graph.py · core/langgraph/*</span><span><b>依赖</b> langgraph langgraph-checkpoint-postgres tiktoken</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add langgraph langgraph-checkpoint-postgres tiktoken langchain-community ddgs</code></pre></div>
+
+      <h4>5.1 状态与图：只有两个节点</h4>
+      <div class="codewrap"><div class="lang">python</div><pre><code>class GraphState(BaseModel):
+    messages: Annotated[list, add_messages] = Field(default_factory=list)  # reducer 追加
+    long_term_memory: str = ""
+
+builder = StateGraph(GraphState)
+builder.add_node("chat", self._chat, destinations=("tool_call", END))
+builder.add_node("tool_call", self._tool_call, destinations=("chat",),
+                 retry_policy=RetryPolicy(max_attempts=3))
+builder.set_entry_point("chat"); builder.set_finish_point("chat")
+
+checkpointer = AsyncPostgresSaver(await self._get_connection_pool())
+await checkpointer.setup()          # ← 自动建 checkpoint 三表 + migrations 表
+graph = builder.compile(checkpointer=checkpointer)</code></pre></div>
+
+      <p>路由不用 <code>add_conditional_edges</code>，而是让节点返回 <code>Command(update=..., goto=...)</code>。
+      好处是「更新状态」和「决定去哪」在同一处，<code>_chat</code> 里判断 <code>response.tool_calls</code> 就能直接分流。</p>
+
+      <div class="codewrap"><div class="lang">python</div><pre><code># 连接池参数，每一项都有原因
+AsyncConnectionPool(url, open=False, max_size=settings.POSTGRES_POOL_SIZE, kwargs={
+    "autocommit": True,          # LangGraph 自己管事务边界
+    "connect_timeout": 5,        # 快速失败，别让请求挂在建连上
+    "prepare_threshold": None,   # 禁用服务端预编译语句，避免 pgbouncer 类代理出错
+    "row_factory": dict_row,     # checkpointer 内部按字典取值
+})</code></pre></div>
+
+      <div class="box bad">
+        <span class="t">Windows 上必然踩的一脚</span>
+        <p>psycopg 的异步连接在 Windows 默认的 <code>ProactorEventLoop</code> 上不可用，
+        表现是连接池 100% <code>PoolTimeout</code>。修复：在<b>创建事件循环之前</b>把策略切成
+        <code>WindowsSelectorEventLoopPolicy</code>。<br>
+        <code>uvicorn --reload</code> 模式下 uvicorn 自己会选 selector loop，所以是好的；
+        <b>不带 reload 直接跑会失败</b>——要么用 reload，要么自己写一个先设策略再 <code>uvicorn.run()</code> 的启动脚本。</p>
+      </div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 5</span>
+        <p>① 启动后库里出现 <code>checkpoints / checkpoint_blobs / checkpoint_writes / checkpoint_migrations</code> 四张表；<br>
+        ② 日志有 <code>graph_created</code> 与 <code>graph_pre_warmed</code>；<br>
+        ③ 同一个 <code>thread_id</code> 连打两次 <code>graph.ainvoke</code>，第二次能读到第一次的消息（说明 checkpoint 真的存了）。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 6 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">6</div>
+      <div class="title">对话接口：端到端第一次闭环
+        <small>加上 SSE 与会话自动命名</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> api/v1/chatbot.py · services/session_naming.py · schemas/chat.py</span><span><b>依赖</b> 无（复用前面）</span></div>
+
+      <h4>6.1 三个决定接口形态的细节</h4>
+      <ul>
+        <li><b>agent 是模块级单例</b>：<code>agent = LangGraphAgent()</code> 写在模块顶层，全进程共用编译好的图。<b>别在路由里 new</b>，否则每个请求都重建连接池。</li>
+        <li><b>非流式返回整段历史</b>：<code>ChatResponse(messages=result)</code> 里是「用户消息 + 助手回复」，前端直接整屏替换，不用自己拼。</li>
+        <li><b>流式用 SSE，错误也走 SSE</b>：<code>data: {"content":"...","done":false}\n\n</code>，最后一帧 <code>done=true</code>。
+        中途异常不换 HTTP 状态码（响应头早发出去了），而是把错误文本塞进最后一帧。</li>
+      </ul>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/session \
+  -H "Authorization: Bearer $USER_TOKEN" | python -c "import sys,json;print(json.load(sys.stdin)['token']['access_token'])")
+
+curl -X POST localhost:8000/api/v1/chatbot/chat \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"你好"}]}'
+
+curl -N -X POST localhost:8000/api/v1/chatbot/chat/stream \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"你好"}]}'</code></pre></div>
+
+      <div class="box note">
+        <span class="t">会话自动命名为什么值得做</span>
+        <p>用户不会给会话起名，列表页就会全是「新对话」。做法：第一条消息进来时，
+        用 <code>UPDATE session SET name=? WHERE id=? AND name=''</code> <b>原子抢占</b>，
+        只有 rowcount==1 的那个请求去调模型；同时先写一个占位名（用户首句前 40 字），
+        这样即使模型调用失败，列表里也有可读文字。多 worker 并发也不会重复调。</p>
+      </div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 6</span>
+        <p>非流式返回 200 且 <code>messages</code> 长度 ≥2；<code>GET /messages</code> 能复现同样内容；
+        <code>DELETE /messages</code> 后再查变空；SSE 用 <code>curl -N</code> 能看到逐帧输出。
+        此时数据库里该 session 的 <code>name</code> 已经不是空串。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 7 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">7</div>
+      <div class="title">长期记忆：mem0 + pgvector
+        <small>这一层坏了不影响聊天，但决定「AI 记不记得你」</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> services/memory.py · core/prompts/memory_capture.md</span><span><b>依赖</b> mem0ai + 一个 embedding 模型</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add mem0ai
+# 外部库必须先开扩展（docker 的 pgvector 镜像已内置）
+psql -h HOST -U USER -d DB -c 'CREATE EXTENSION IF NOT EXISTS vector'</code></pre></div>
+
+      <div class="codewrap"><div class="lang">python</div><pre><code>AsyncMemory.from_config({
+    "vector_store": {"provider": "pgvector", "config": {
+        "collection_name": "longterm_memory", "dbname": ..., "host": ...,
+    }},
+    "llm":      {"provider": "openai", "config": {"model": settings.LONG_TERM_MEMORY_MODEL}},
+    "embedder": {"provider": "openai", "config": {"model": settings.LONG_TERM_MEMORY_EMBEDDER_MODEL}},
+    "custom_fact_extraction_prompt": load_memory_capture_prompt(),
+})</code></pre></div>
+
+      <p>三个接入要点：</p>
+      <ol>
+        <li><b>只送用户消息给 <code>add()</code></b>。mem0 的抽取器会把对话双方拼在一起，助手给的建议会被当成用户自己说的，抽出假事实。</li>
+        <li><b><code>user_id=None</code> 直接跳过</b>。否则所有匿名会话会挤进同一个分区，互相污染。</li>
+        <li><b>搜索加 60s 缓存</b>。<code>cache_key("memory", user_id, query)</code> 做 sha256 短哈希，同一个问题不重复打向量库。</li>
+      </ol>
+
+      <div class="box bad">
+        <span class="t">换国产模型时最容易静默死在这里</span>
+        <p>mem0 的 embedder 默认是 <code>text-embedding-3-small</code>。如果你只把 <code>OPENAI_BASE_URL</code> 指到某个兼容网关，
+        而网关没有这个 embedding 模型，<b>长期记忆会静默失败</b>（异常被 <code>search</code> 的 try/except 吞掉，只留一条 error 日志）。
+        必须换成该网关真正提供的 embedding 模型。</p>
+      </div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 7</span>
+        <p>① 库里出现 <code>longterm_memory</code> 表；<br>
+        ② 第一轮说「我叫船长，做课程」→ 第二轮换个会话问「我叫什么」，能答出「船长」；<br>
+        ③ 日志里能看到 <code>long_term_memory_updated_successfully</code> 与 <code>memory_search_cache_hit</code>。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 8 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">8</div>
+      <div class="title">Redis：缓存 + 分布式限流
+        <small>唯一一个"加了不一定有感、缺了会很痛"的组件</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> core/cache.py · core/limiter.py</span><span><b>依赖</b> redis slowapi</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add redis slowapi
+# 注意：redis 必须是主依赖。放在 optional extra 里，Docker 的 uv sync --frozen 装不上，
+# 结果是「配了 REDIS_HOST 也静默回落到内存缓存」。</code></pre></div>
+
+      <h4>8.1 缓存：两套实现，同一个签名</h4>
+      <div class="codewrap"><div class="lang">python</div><pre><code>class InMemoryCacheService:   # dict + time.monotonic() 过期
+class RedisCacheService:      # redis.asyncio，get/set(ex)/delete/aclose
+
+# 导入时就定后端，运行期不再切换
+cache_service = _create_cache_service()</code></pre></div>
+
+      <p>Redis 版的每个方法都 <code>try/except</code> 吞异常并只记 warning。<b>这是刻意的</b>：
+      缓存挂掉应该退化成「慢一点」，而不是让整个对话 500。</p>
+
+      <h4>8.2 限流：storage_uri 决定它是单机还是集群</h4>
+      <div class="codewrap"><div class="lang">python</div><pre><code>_storage_uri = f"redis://:{quote(password)}@{host}:{port}/{db}"
+limiter = Limiter(key_func=get_remote_address,
+                  default_limits=settings.RATE_LIMIT_DEFAULT,
+                  storage_uri=_storage_uri)   # None 时 slowapi 用进程内存</code></pre></div>
+
+      <div class="box warn">
+        <span class="t">两件事必须自己确认</span>
+        <p><b>① DB 编号</b>：别用 0 号库。如果同一台 Redis 上还跑着别的服务（比如 MaxKB），key 空间会混，<code>KEYS *</code> 和清库都会误伤。本项目默认 <code>REDIS_DB=1</code>。<br>
+        <b>② 多副本</b>：只有配了 Redis，限流才是全局的。没配时每个 worker 各数一份，
+        <code>10/minute</code> 在 4 个 worker 下实际变成 40/minute——这是安全问题，不只是性能问题。</p>
+      </div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 8</span>
+        <p>① 日志出现 <code>cache_initialized backend=redis db=1</code>；<br>
+        ② <code>redis-cli -n 1 KEYS 'LIMITS*'</code> 有 key 且 TTL 在递减；<br>
+        ③ 把 <code>REDIS_HOST</code> 清空重启，日志应变成 <code>backend=in_memory</code>，服务仍可用——证明降级路径有效。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 9 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">9</div>
+      <div class="title">可观测：把黑盒变成可查的证据
+        <small>四个工具，各管一段</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> core/middleware.py · core/metrics.py · core/observability.py</span><span><b>依赖</b> prometheus-client starlette-prometheus langfuse pyinstrument(dev)</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add prometheus-client starlette-prometheus "langfuse==3.9.1"
+uv add --dev pyinstrument</code></pre></div>
+
+      <table>
+        <thead><tr><th style="width:120px">工具</th><th>回答什么问题</th><th>怎么接</th><th>注意</th></tr></thead>
+        <tbody>
+          <tr><td>request_id</td><td>这条报错属于哪次请求？</td><td><code>CorrelationIdMiddleware</code> 最外层挂载</td><td>必须最外层，否则日志里拿不到</td></tr>
+          <tr><td>structlog</td><td>当时发生了什么？带哪些上下文？</td><td>processor 链自动注入 request_id / user_id</td><td>事件名小写下划线，禁 f-string</td></tr>
+          <tr><td>Prometheus</td><td>整体 QPS、P95、错误率</td><td><code>setup_metrics(app)</code> 挂 <code>/metrics</code></td><td>endpoint 标签用原始 path，高基数路由要注意</td></tr>
+          <tr><td>Langfuse</td><td>这次回答为什么差？token 花在哪？</td><td>CallbackHandler 传进 <code>config["callbacks"]</code></td><td>没 key 只 warning，但评测会拿不到数据</td></tr>
+          <tr><td>pyinstrument</td><td>这 3 秒卡在哪一行？</td><td>DEBUG 时挂中间件，超阈值落 JSON</td><td>开 tracemalloc 有开销，生产别开</td></tr>
+        </tbody>
+      </table>
+
+      <div class="box note">
+        <span class="t">中间件顺序怎么定</span>
+        <p><code>add_middleware</code> 是<b>后加的先执行</b>。所以要拿到最全的上下文，
+        <code>CorrelationIdMiddleware</code> 必须最后加（最外层）；日志上下文清理放在内层 finally，保证异常也能清。</p>
+      </div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 9</span>
+        <p>① <code>curl -H 'X-Request-ID: test-123' localhost:8000/health</code>，响应头回显同一个 ID，
+        日志里每条都带它；<br>
+        ② <code>GET /metrics</code> 能看到 <code>http_requests_total</code> 与 <code>llm_inference_duration_seconds</code>；<br>
+        ③ 配好 Langfuse key 后，聊天一次，Langfuse 里能看到完整 trace（含模型名、token 数）。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== STEP 10 ===================== -->
+  <div class="step">
+    <div class="head">
+      <div class="idx">10</div>
+      <div class="title">收口：容器、流水线、评测
+        <small>把「我机器上能跑」变成「谁都能跑」</small>
+      </div>
+    </div>
+    <div class="body">
+      <div class="meta"><span><b>新增</b> Dockerfile · compose · Makefile · .pre-commit-config.yaml · evals/*</span><span><b>依赖</b> ruff pyright pre-commit（dev）</span></div>
+
+      <div class="codewrap"><div class="lang">bash</div><pre><code>uv add --dev ruff pyright pre-commit
+uv run pre-commit install
+
+# Docker 镜像的两层缓存，顺序别改
+#   COPY pyproject.toml uv.lock ./  →  uv sync --frozen --no-install-project
+#   COPY . .                        →  uv sync --frozen</code></pre></div>
+
+      <div class="box bad">
+        <span class="t">三个容器相关的默认陷阱</span>
+        <p><b>① <code>.env</code> 里的 <code>POSTGRES_HOST=localhost</code> 在容器里指向自己</b>，必须由 compose 覆盖成 <code>db</code>。<br>
+        <b>② entrypoint 缺 <code>OPENAI_API_KEY</code> 直接 exit 1</b>，容器起来又秒退，日志只有一行。<br>
+        <b>③ 容器不会自动跑迁移</b>。服务能起来、<code>/health</code> 也是 200（因为只查连通性），但注册用户会报「表不存在」。
+        必须额外 <code>make docker-migrate</code>——这是这个模板最容易「看起来跑起来了」的坑。</p>
+      </div>
+
+      <div class="box ok">
+        <span class="t">Checkpoint 10</span>
+        <p><code>uv run ruff check .</code> 与 <code>uv run pyright</code> 全绿；
+        <code>make help</code> 能列出所有目标；
+        有 Docker 的话 <code>make docker-up &amp;&amp; make docker-migrate</code> 后注册用户成功。
+        至此仓库达到可交付状态。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="box purple">
+    <span class="t">只有两小时的快速路径</span>
+    <p>跳过 4 的容错打磨、7 的长期记忆、9 的可观测，先跑通 <b>0 → 1 → 2 → 3 → 5 → 6</b>。
+    这条线拿到的是「能注册、能开会话、能对话、历史可查」的最小闭环，剩下的都是增强项。
+    但要记住：跳过第 2 步的 <code>/health</code> 503 逻辑，后面接负载均衡时会返工。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="matrix">
+  <h2><span class="num">4</span>依赖矩阵：缺了哪个会怎样</h2>
+
+  <p class="lede">这张表是排障时的第一张图。先定位「哪一层坏了」，再去看对应的文件。</p>
+
+  <div class="tblwrap">
+  <table>
+    <thead>
+      <tr><th style="width:120px">组件</th><th style="width:76px">必需性</th><th style="width:150px">代码入口</th><th style="width:170px">关键配置</th><th>缺失后的真实表现</th><th style="width:52px">步骤</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Python 3.13 + uv</b></td><td>硬</td>
+        <td class="path">pyproject.toml</td>
+        <td class="path">requires-python</td>
+        <td>装不上；3.12 会因 <code>override</code> / <code>X|None</code> 报语法错</td><td class="nowrap">0</td>
+      </tr>
+      <tr>
+        <td><b>PostgreSQL 16+</b></td><td>硬</td>
+        <td class="path">services/database.py<br>core/langgraph/graph.py</td>
+        <td class="path">POSTGRES_*</td>
+        <td>启动不崩（lifespan 只记日志），但 <code>/health</code> 返 503、所有 chat 500、注册报缺表</td><td class="nowrap">2</td>
+      </tr>
+      <tr>
+        <td><b>pgvector 扩展</b></td><td>软</td>
+        <td class="path">services/memory.py</td>
+        <td class="path">LONG_TERM_MEMORY_COLLECTION_NAME</td>
+        <td>业务与对话全正常，只有长期记忆静默失效（error 日志 + 记忆为空）</td><td class="nowrap">7</td>
+      </tr>
+      <tr>
+        <td><b>JWT 密钥</b></td><td>硬</td>
+        <td class="path">core/config.py</td>
+        <td class="path">JWT_SECRET_KEY ≥32 字符</td>
+        <td><b>导入即抛 RuntimeError</b>：uvicorn 起不来、alembic 也跑不了</td><td class="nowrap">1</td>
+      </tr>
+      <tr>
+        <td><b>LLM（OpenAI 协议）</b></td><td>硬</td>
+        <td class="path">services/llm/registry.py</td>
+        <td class="path">OPENAI_API_KEY<br>OPENAI_BASE_URL</td>
+        <td>容器直接 exit 1；本地起得来但 chat 走完 fallback 后 500（<code>llm call timed out</code>）</td><td class="nowrap">4</td>
+      </tr>
+      <tr>
+        <td><b>Embedding 模型</b></td><td>软*</td>
+        <td class="path">services/memory.py</td>
+        <td class="path">LONG_TERM_MEMORY_EMBEDDER_MODEL</td>
+        <td>同 pgvector：只影响记忆。换第三方网关时最常漏的一项</td><td class="nowrap">7</td>
+      </tr>
+      <tr>
+        <td><b>Redis</b></td><td>软</td>
+        <td class="path">core/cache.py<br>core/limiter.py</td>
+        <td class="path">REDIS_HOST / REDIS_DB</td>
+        <td>回落内存缓存：单机无感；多副本时缓存不共享、限流被放大 N 倍</td><td class="nowrap">8</td>
+      </tr>
+      <tr>
+        <td><b>Langfuse</b></td><td>软</td>
+        <td class="path">core/observability.py<br>evals/</td>
+        <td class="path">LANGFUSE_*</td>
+        <td>无 trace；<code>make eval</code> 拉到 0 条、报告全 0</td><td class="nowrap">9</td>
+      </tr>
+      <tr>
+        <td><b>Prometheus/Grafana</b></td><td>软</td>
+        <td class="path">core/metrics.py</td>
+        <td class="path">/metrics</td>
+        <td>没指标可看，功能不受影响</td><td class="nowrap">9</td>
+      </tr>
+      <tr>
+        <td><b>DuckDuckGo 出网</b></td><td>软</td>
+        <td class="path">tools/duckduckgo_search.py</td>
+        <td class="path">DDGS</td>
+        <td>工具返回错误文本（<code>handle_tool_error=True</code>），对话继续</td><td class="nowrap">5</td>
+      </tr>
+      <tr>
+        <td><b>Docker</b></td><td>可无</td>
+        <td class="path">Dockerfile / compose</td>
+        <td class="path">—</td>
+        <td>本地开发完全不需要；只影响打包与一键起环境</td><td class="nowrap">10</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="dim" style="font-size:12.8px">* 「软」的定义：缺了不影响主链路能跑通，但会静默丢功能——这类最危险，因为不报错。</p>
+
+  <h3>四种「状态」的存放位置</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:180px">数据</th><th style="width:210px">位置</th><th>谁负责建</th><th>清理方式</th></tr></thead>
+    <tbody>
+      <tr><td>用户、会话</td><td class="path">PG: user / session</td><td>Alembic 迁移</td><td><code>alembic downgrade</code> 或手删</td></tr>
+      <tr><td>对话消息、中断点</td><td class="path">PG: checkpoint 三表</td><td><code>checkpointer.setup()</code> 启动时自动建</td><td><code>DELETE /chatbot/messages</code>（按 thread_id 删）</td></tr>
+      <tr><td>用户画像事实</td><td class="path">PG: longterm_memory</td><td>mem0 首次访问自建</td><td>按 <code>user_id</code> 删行；<code>memory.delete()</code></td></tr>
+      <tr><td>检索缓存、限流计数</td><td class="path">Redis db 1</td><td>应用写入，自动过期</td><td>等 TTL；或 <code>redis-cli -n 1 FLUSHDB</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="traps">
+  <h2><span class="num">5</span>踩坑清单：20 条，按「会不会让你起不来」排序</h2>
+
+  <p class="lede">
+    A 组是「根本起不来」，B 组是「起来了但不对」，C 组是「能跑但有隐患」。
+    前两组里有 4 条是这段时间在真实环境（阿里云 PG 17 + Redis 8.0.6）实测撞出来的，已在仓库里修掉。
+  </p>
+
+  <h3>A 组 · 起不来</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:40px">#</th><th style="width:230px">现象</th><th>根因与修法</th><th style="width:56px">状态</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>A1</td><td><code>RuntimeError: JWT_SECRET_KEY must be at least 32 characters</code></td>
+        <td>配置层在<b>导入时</b>校验。改 <code>.env</code> 即可；注意 alembic 也受影响，不是只有服务。</td><td>设计如此</td>
+      </tr>
+      <tr>
+        <td>A2</td><td>alembic 报 <code>could not translate host name "postgres@47.x.x.x"</code></td>
+        <td>密码含 <code>@</code>，拼 DSN 时没做 URL 编码。用 <code>quote_plus</code> 编码用户名和密码。<code>database.py</code> 本来就有，<code>alembic/env.py</code> 漏了。</td><td>已修</td>
+      </tr>
+      <tr>
+        <td>A3</td><td>alembic 报 <code>ValueError: invalid interpolation syntax ... "%40"</code></td>
+        <td><code>set_main_option</code> 走 configparser，<code>%</code> 是插值符。编码后的 URL 要 <code>.replace("%","%%")</code>。</td><td>已修</td>
+      </tr>
+      <tr>
+        <td>A4</td><td>Windows 上 <code>PoolTimeout</code>，checkpoint 池连不上</td>
+        <td>psycopg 异步不兼容 <code>ProactorEventLoop</code>。建 loop 前切 <code>WindowsSelectorEventLoopPolicy</code>。注意 <code>uvicorn</code> 不带 <code>--reload</code> 时仍会失败（它先建 loop 再 import app）。</td><td>已修</td>
+      </tr>
+      <tr>
+        <td>A5</td><td>容器起来后立刻退出，日志只有一行</td>
+        <td><code>docker-entrypoint.sh</code> 强校验 <code>JWT_SECRET_KEY</code> 和 <code>OPENAI_API_KEY</code>，缺一个就 <code>exit 1</code>。</td><td>设计如此</td>
+      </tr>
+      <tr>
+        <td>A6</td><td><code>make docker-up</code> 直接报「Environment file not found」</td>
+        <td>Makefile 的 <code>load_env_file</code> 要求 <code>.env.$ENV</code> 存在。先 <code>cp .env.example .env.development</code>。</td><td>设计如此</td>
+      </tr>
+      <tr>
+        <td>A7</td><td>本地跑连不上库，容器里却正常</td>
+        <td><code>.env.example</code> 里 <code>POSTGRES_HOST=db</code> 是给容器用的。本地必须改 <code>localhost</code>；compose 里也确实是靠 <code>environment</code> 反向覆盖的。</td><td>配置差异</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>B 组 · 起来了但不对</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:40px">#</th><th style="width:230px">现象</th><th>根因与修法</th><th style="width:56px">状态</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>B1</td><td>服务健康、<code>/health</code> 200，但注册报「表不存在」</td>
+        <td>容器不跑迁移。<code>make docker-migrate</code>。<b>这是「看起来跑起来了」的头号陷阱。</b></td><td>流程要求</td>
+      </tr>
+      <tr>
+        <td>B2</td><td>配了 <code>REDIS_HOST</code> 却仍是 <code>in_memory</code></td>
+        <td><code>redis</code> 原先在 optional extra 里，Docker 的 <code>uv sync --frozen</code> 不装 extra → <code>REDIS_AVAILABLE=False</code> → 静默回落。已把 redis 提为主依赖。</td><td>已修</td>
+      </tr>
+      <tr>
+        <td>B3</td><td>登录接口一直 422</td>
+        <td>它是 <code>Form(...)</code>，必须 <code>application/x-www-form-urlencoded</code>，不是 JSON。</td><td>接口约定</td>
+      </tr>
+      <tr>
+        <td>B4</td><td>用 user token 调 <code>/chatbot/*</code> 返回 404</td>
+        <td>chat 接口要 <b>session token</b>。<code>get_current_session</code> 拿 <code>sub</code> 去查 session 表，查不到就 404。两种 token 不能混。</td><td>设计如此</td>
+      </tr>
+      <tr>
+        <td>B5</td><td>chat 报 <code>llm call timed out after 60s</code></td>
+        <td>没配 <code>OPENAI_API_KEY</code> 或网关不通。注意它把所有重试都吃在 60s 总预算里，所以是"超时"不是"401"。</td><td>配置问题</td>
+      </tr>
+      <tr>
+        <td>B6</td><td>换国产模型后模型名报错 / 不识别</td>
+        <td>注册表里是硬编码的 4 个 <code>gpt-5.x</code>，<b>不读 <code>DEFAULT_LLM_MODEL</code></b>。要改 <code>LLM_CONFIGS</code>，并注意这些条目都带了 <code>reasoning</code> 参数，非 reasoning 模型要删掉。</td><td>需改造</td>
+      </tr>
+      <tr>
+        <td>B7</td><td>长期记忆一直空，日志无异常抛出</td>
+        <td>embedding 模型（<code>text-embedding-3-small</code>）在你接的网关上不存在。换模型；或被 <code>search</code> 的 try/except 吞了，只有 <code>failed_to_get_relevant_memory</code> 一条 error。</td><td>配置问题</td>
+      </tr>
+      <tr>
+        <td>B8</td><td>会话列表全是「新对话」</td>
+        <td><code>SESSION_NAMING_ENABLED</code> 关了，或命名强行指定的 <code>gpt-5.4-nano</code> 不在注册表里。</td><td>配置问题</td>
+      </tr>
+      <tr>
+        <td>B9</td><td>流式接口报错时前端收到 200 却是乱码</td>
+        <td>SSE 里业务异常不走 HTTP 状态码，而是最后一帧 <code>{"content":"错误信息","done":true}</code>。前端要判 <code>done</code>。</td><td>接口约定</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>C 组 · 能跑但有隐患</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:40px">#</th><th style="width:250px">隐患</th><th>说明与建议</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>C1</td><td>限流在多副本下失效</td>
+        <td>没配 Redis 时 slowapi 用进程内存。<code>10/minute</code> × 4 worker = 40/minute。这是安全项，优先修。</td>
+      </tr>
+      <tr>
+        <td>C2</td><td><code>REDIS_DB=0</code> 与其他服务撞车</td>
+        <td>MaxKB 之类默认也在 0 号库。本项目已默认 1；如果你自己的 <code>.env</code> 还写着 0，要改。</td>
+      </tr>
+      <tr>
+        <td>C3</td><td><code>database.py</code> 的 async 方法内部是同步阻塞</td>
+        <td><code>with Session(engine)</code> 是同步 IO，跑在事件循环里。低并发无感，高并发会拖慢所有请求。真上量要换 asyncpg + AsyncSession。</td>
+      </tr>
+      <tr>
+        <td>C4</td><td><code>MAX_TOKENS</code> 同时当输入裁剪上限和输出上限</td>
+        <td><code>prepare_messages</code> 用 2000 裁历史，<code>registry</code> 也用 2000 限输出。长上下文场景应拆成 <code>MAX_INPUT_TOKENS</code> / <code>MAX_OUTPUT_TOKENS</code>。</td>
+      </tr>
+      <tr>
+        <td>C5</td><td>单条消息 3000 字硬上限</td>
+        <td><code>schemas/chat.py</code> 的 <code>max_length=3000</code>。要传长文档得改这里，同时考虑裁剪策略。</td>
+      </tr>
+      <tr>
+        <td>C6</td><td><code>build-docker.sh</code> 传了一堆没人接的 build-arg</td>
+        <td><code>--build-arg OPENAI_API_KEY=...</code> 但 Dockerfile 没有对应 <code>ARG</code>：既不生效，还可能留在构建元数据里。建议删掉这些参数。</td>
+      </tr>
+      <tr>
+        <td>C7</td><td>模型单例 + 状态可变</td>
+        <td><code>llm_service</code> 是全局单例，默认路径换模型会改 <code>self._current_model_index</code>。多 worker 各自独立没问题，但同进程内一旦降级过，后续请求都会用降级后的模型（直到下次切换）。</td>
+      </tr>
+      <tr>
+        <td>C8</td><td><code>services/__init__.py</code> 没导出 <code>memory_service</code></td>
+        <td>容易写成 <code>from app.services import memory_service</code> 然后 ImportError。直接从 <code>app.services.memory</code> 导入。</td>
+      </tr>
+      <tr>
+        <td>C9</td><td>模板残留：<code>thread</code> 表、<code>orders_processed</code> 指标</td>
+        <td>都没人用。删表要配套迁移，删指标直接删即可。</td>
+      </tr>
+      <tr>
+        <td>C10</td><td>测试目录不存在</td>
+        <td>pyproject 配了 pytest，CI 里<b>没有测试步骤</b>。要加就在 <code>tests/</code> 写，然后补一条 CI step。</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="appendix">
+  <h2><span class="num">6</span>附录：命令、变量、对照表</h2>
+
+  <h3>6.1 命令速查</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:250px">命令</th><th>作用</th><th style="width:300px">备注</th></tr></thead>
+    <tbody>
+      <tr><td class="path">uv sync</td><td>按 lock 装依赖（含 dev group）</td><td>首次跑最慢；改 pyproject 后要先 <code>uv lock</code></td></tr>
+      <tr><td class="path">uv run uvicorn app.main:app --reload --port 8000</td><td>本地开发</td><td>Windows 上<b>必须带</b> <code>--reload</code></td></tr>
+      <tr><td class="path">uv run alembic upgrade head</td><td>迁移到最新</td><td>需合法 JWT 密钥——配置层导入即校验</td></tr>
+      <tr><td class="path">uv run alembic revision --autogenerate -m "msg"</td><td>按模型差异生成迁移</td><td>生成后<b>务必人工 review</b>，autogenerate 会漏索引/类型变更</td></tr>
+      <tr><td class="path">uv run ruff check . &amp;&amp; uv run pyright</td><td>静态检查</td><td>等价 <code>make check</code></td></tr>
+      <tr><td class="path">uv run pre-commit run --all-files</td><td>手动跑全部钩子</td><td>含 detect-secrets，提交前会拦住密钥</td></tr>
+      <tr><td class="path">docker compose -f docker-compose.datastores.yml up -d</td><td>只起 PG + Redis</td><td>本地开发推荐；端口绑 127.0.0.1</td></tr>
+      <tr><td class="path">make docker-up &amp;&amp; make docker-migrate</td><td>起完整环境并建表</td><td><b>两步都要</b>，漏第二步会缺表</td></tr>
+      <tr><td class="path">make eval-quick</td><td>用默认配置跑评测</td><td>需要 Langfuse 上有近 24h 的 trace</td></tr>
+      <tr><td class="path">curl -N .../chatbot/chat/stream</td><td>看 SSE 流</td><td><code>-N</code> 关掉缓冲，否则看不到逐帧</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>6.2 环境变量速查（按模块）</h3>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:150px">模块</th><th style="width:330px">变量</th><th>必填 / 说明</th></tr></thead>
+    <tbody>
+      <tr><td>应用</td><td class="path">APP_ENV PROJECT_NAME VERSION API_V1_STR DEBUG</td><td><code>APP_ENV</code> 决定加载哪个 .env；<code>DEBUG</code> 在 development 下强制 true</td></tr>
+      <tr><td>CORS</td><td class="path">ALLOWED_ORIGINS</td><td>逗号分隔；默认 <code>*</code>，生产要收紧</td></tr>
+      <tr><td>鉴权</td><td class="path">JWT_SECRET_KEY JWT_ALGORITHM JWT_ACCESS_TOKEN_EXPIRE_DAYS</td><td><b>密钥必填，≥32 字符</b>，非 test 环境不放过弱值</td></tr>
+      <tr><td>数据库</td><td class="path">POSTGRES_HOST PORT DB USER PASSWORD POOL_SIZE MAX_OVERFLOW</td><td>密码含特殊字符会被 <code>quote_plus</code> 处理，无需手工转义</td></tr>
+      <tr><td>Redis</td><td class="path">REDIS_HOST PORT DB PASSWORD MAX_CONNECTIONS CACHE_TTL_SECONDS</td><td><code>HOST</code> 留空 = 内存缓存；<b>DB 默认 1</b></td></tr>
+      <tr><td>LLM</td><td class="path">OPENAI_API_KEY OPENAI_BASE_URL DEFAULT_LLM_MODEL MAX_TOKENS MAX_LLM_CALL_RETRIES LLM_TOTAL_TIMEOUT</td><td><code>DEFAULT_LLM_MODEL</code> 只影响服务初始化取哪个实例，<b>不改变注册表内容</b></td></tr>
+      <tr><td>长期记忆</td><td class="path">LONG_TERM_MEMORY_MODEL LONG_TERM_MEMORY_EMBEDDER_MODEL LONG_TERM_MEMORY_COLLECTION_NAME</td><td>embedding 模型必须真实可用</td></tr>
+      <tr><td>Langfuse</td><td class="path">LANGFUSE_TRACING_ENABLED PUBLIC_KEY SECRET_KEY HOST</td><td>代码默认 <code>true</code>，.env.example 里给的是 <code>false</code>；无 key 只 warning</td></tr>
+      <tr><td>限流</td><td class="path">RATE_LIMIT_DEFAULT RATE_LIMIT_CHAT CHAT_STREAM MESSAGES LOGIN REGISTER</td><td>格式 <code>"100 per minute"</code>，逗号可写多条</td></tr>
+      <tr><td>日志</td><td class="path">LOG_DIR LOG_LEVEL LOG_FORMAT</td><td><code>console</code> 人读，<code>json</code> 机器读；docker 建议 json</td></tr>
+      <tr><td>剖面</td><td class="path">PROFILING_DIR PROFILING_THRESHOLD_SECONDS</td><td>只在 DEBUG 生效</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>6.3 文件 → 步骤 对照表</h3>
+  <p class="lede">自己动手时按这张表推进：每行就是那一步要写的东西，写完全部，仓库结构就与现在的 fly-agent 一致。</p>
+  <div class="tblwrap">
+  <table>
+    <thead><tr><th style="width:60px">步骤</th><th style="width:300px">要写的文件</th><th>验收动作</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td class="path">pyproject.toml · .python-version · 目录与 __init__.py</td><td><code>uv run python -c "import fastapi"</code></td></tr>
+      <tr><td>1</td><td class="path">core/config.py · core/logging.py · .env.example</td><td>短密钥必须报错；JSONL 日志落盘</td></tr>
+      <tr><td>2</td><td class="path">models/{base,user,session,thread}.py · services/database.py · alembic/{env.py,ini} · main.py(含 /health)</td><td><code>alembic upgrade head</code> + <code>/health</code> 200/503</td></tr>
+      <tr><td>3</td><td class="path">utils/{auth,sanitization}.py · schemas/auth.py · api/v1/{auth,api}.py</td><td>register → login → session 三连 200</td></tr>
+      <tr><td>4</td><td class="path">services/llm/{registry,service}.py</td><td>脚本调通一次；错 key 能走完 fallback</td></tr>
+      <tr><td>5</td><td class="path">schemas/graph.py · core/prompts/* · utils/graph.py · core/langgraph/{graph.py,tools/*}</td><td>checkpoint 四表出现 + 同 thread 二次调用有历史</td></tr>
+      <tr><td>6</td><td class="path">schemas/chat.py · api/v1/chatbot.py · services/session_naming.py</td><td>chat / messages / stream 三条都通</td></tr>
+      <tr><td>7</td><td class="path">services/memory.py · prompts/memory_capture.md</td><td>跨会话能记住用户事实</td></tr>
+      <tr><td>8</td><td class="path">core/cache.py · core/limiter.py</td><td>Redis 里有 <code>LIMITS*</code>；清空 HOST 能降级</td></tr>
+      <tr><td>9</td><td class="path">core/{middleware,metrics,observability}.py · schemas/base.py</td><td><code>/metrics</code> 有数、日志带 request_id</td></tr>
+      <tr><td>10</td><td class="path">Dockerfile · docker-compose*.yml · Makefile · .pre-commit-config.yaml · .github/workflows/* · evals/* · scripts/*</td><td><code>make check</code> 全绿；容器起得来且迁移后能注册</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>6.4 上线前 checklist</h3>
+  <div class="panel">
+    <ul style="margin:0">
+      <li><b>密钥</b>：<code>JWT_SECRET_KEY</code> 是随机 32+ 字符、且不在版本库里；<code>.env.*</code> 已在 <code>.gitignore</code>。</li>
+      <li><b>环境</b>：<code>APP_ENV=production</code>，此时 <code>DEBUG=false</code>、<code>LOG_LEVEL=WARNING</code>、限流收紧到 200/day。</li>
+      <li><b>数据库</b>：独立库 + <code>CREATE EXTENSION vector</code>；迁移已跑；连接池大小对得上 PG 的 <code>max_connections</code>（app 20 + overflow 10，乘 worker 数别超）。</li>
+      <li><b>Redis</b>：非 0 号库；有密码；<code>maxmemory-policy</code> 明确（缓存盘用 <code>allkeys-lru</code>，别用 noeviction 把写入顶死）。</li>
+      <li><b>限流</b>：确认 <code>/metrics</code> 里能看到 <code>LIMITS</code> 相关写入，或直接查 Redis 确认是分布式存储。</li>
+      <li><b>可观测</b>：<code>/health</code> 接进 LB 且用 503 判死；Prometheus 有目标；Langfuse 有 trace。</li>
+      <li><b>日志</b>：<code>LOG_FORMAT=json</code>；确认日志里没有把 token、密码打进 payload。</li>
+      <li><b>模型</b>：<code>LLM_TOTAL_TIMEOUT</code> 与网关超时对齐；降级链里每个模型都真实可用（否则降级只是换个地方失败）。</li>
+      <li><b>成本</b>：<code>MAX_TOKENS</code>、会话标题用的 nano 模型、mem0 的事实抽取调用，这三处是隐性 token 消耗点。</li>
+    </ul>
+  </div>
+
+  <div class="box note">
+    <span class="t">最后一句</span>
+    <p>这个仓库的价值不在「用了 LangGraph」，而在那些不显眼的决定：checkpointer 不可用就拒绝服务、
+    缓存坏了降级而不是报错、会话命名用数据库原子操作去重、限流必须落在 Redis。
+    这些才是脚手架和 demo 的区别——照着搭的时候，<b>别把它们当样板代码跳过去</b>。</p>
+  </div>
+</section>
+
+<footer>
+  fly-agent · 源码解剖与搭建手册 · 基于仓库当前代码整理（60 个文件 / 约 6100 行）
+</footer>
+
+
+</div>
+
+<button id="totop" title="回到顶部">↑</button>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.navlinks a'));
+  var secs = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  var top = document.getElementById('totop');
+
+  function onScroll(){
+    var y = window.scrollY + 120, cur = 0;
+    secs.forEach(function(s,i){ if(s && s.offsetTop <= y) cur = i; });
+    links.forEach(function(a,i){ a.classList.toggle('on', i === cur); });
+    top.classList.toggle('show', window.scrollY > 500);
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  top.addEventListener('click', function(){ window.scrollTo({top:0, behavior:'smooth'}); });
+
+  document.querySelectorAll('.codewrap').forEach(function(w){
+    var btn = document.createElement('button');
+    btn.className = 'copy'; btn.textContent = '复制';
+    btn.addEventListener('click', function(){
+      var code = w.querySelector('code').innerText;
+      navigator.clipboard.writeText(code).then(function(){
+        btn.textContent = '已复制';
+        setTimeout(function(){ btn.textContent = '复制'; }, 1400);
+      });
+    });
+    w.appendChild(btn);
+  });
+})();
+</script>
+</body>
+</html>

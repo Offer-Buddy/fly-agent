@@ -1,18 +1,48 @@
+# =============================================================================
+# 全栈编排：API + PostgreSQL(pgvector) + Redis + Prometheus + Grafana + cadvisor
+# =============================================================================
+# 常用命令（都通过 Makefile 包装，会顺带校验 ENV 与 .env 文件）：
+#   make docker-up      # 只起 db + app
+#   make stack-up       # 起全部服务
+#   make stack-logs     # 跟全部日志
+#   make stack-down     # 停全部服务
+#
+# 直接调 compose 时要自己带环境文件，否则 ${POSTGRES_USER} 之类会解析成空：
+#   APP_ENV=development docker-compose --env-file .env.development up -d
+#
+# 只想单独起数据层、不构建 app 镜像，用 docker-compose.datastores.yml
+# （两者都会占 5432 / 6379，别同时启动）。
+# =============================================================================
+
+# 这行是 Compose V1 时代的格式声明，Compose V2 已忽略；保留只为兼容老命令。
 version: '3.8'
 
 services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 + pgvector
+  # ---------------------------------------------------------------------------
+  # 用 pgvector 官方镜像而不是官方 postgres 再自己装扩展：
+  # 扩展已编译进镜像，省掉构建步骤，也避免版本对不上。
+  # 长期记忆（mem0 + pgvector）与 LangGraph checkpointer 都落在这个库里。
   db:
     image: pgvector/pgvector:pg16
+    # 固定 amd64：该镜像的 arm64 变体不全，Apple Silicon 上靠 Rosetta/QEMU 跑更稳。
+    # 纯 x86 服务器上这行可以删掉。
     platform: linux/amd64
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
+      # 对宿主机开放，方便用 DBeaver / psql 直接连；只在内网用可改成
+      # "127.0.0.1:5432:5432" 收紧到本机
       - "5432:5432"
     volumes:
+      # 命名卷持久化数据。注意：换大版本（如 pg16 → pg17）不能直接复用旧卷，
+      # 必须 pg_dump 导出再导入
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
+      # pg_isready 只探「能否接受连接」，比 TCP 端口探测更能反映真实可用性
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
@@ -21,15 +51,20 @@ services:
     networks:
       - monitoring
 
-  # Valkey (Redis-compatible) cache — optional, set VALKEY_HOST=valkey in your .env to enable
-  valkey:
-    image: valkey/valkey:8.1.6-alpine
+  # ---------------------------------------------------------------------------
+  # Redis —— 可选组件
+  # ---------------------------------------------------------------------------
+  # 用途有两个：① 缓存层（app/core/cache.py）② 限流的共享存储（多副本时必须）。
+  # 不启用就直接把 .env 里的 REDIS_HOST 注释掉，缓存与限流会自动退化为
+  # 进程内实现（单副本够用，多副本会各算各的）。
+  redis:
+    image: redis:8.0.6-alpine
     ports:
       - "6379:6379"
     volumes:
-      - valkey-data:/data
+      - redis-data:/data
     healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,39 +72,62 @@ services:
     networks:
       - monitoring
 
-  # Single API service with dynamic environment
+  # ---------------------------------------------------------------------------
+  # 应用本体（FastAPI + LangGraph）
+  # ---------------------------------------------------------------------------
   app:
     build:
       context: .
       args:
+        # 传给 Dockerfile 的 ARG APP_ENV，决定镜像内的默认环境标识
         APP_ENV: ${APP_ENV:-development}
     ports:
       - "8000:8000"
     volumes:
+      # 挂源码目录，改代码后容器内立即可见（配合 --reload 才自动重启；
+      # 生产部署请删掉这两行，用镜像里的代码，避免宿主机文件影响运行时）
       - ./app:/app/app
+      # 日志落到宿主机 ./logs，方便直接看 JSONL 文件，不用进容器
       - ./logs:/app/logs
     env_file:
+      # 按 APP_ENV 挑环境文件；文件不存在时 compose 会直接报错退出
       - .env.${APP_ENV:-development}
     environment:
+      # environment 段的优先级高于 env_file，这里放三类「必须覆盖」的变量
       - APP_ENV=${APP_ENV:-development}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set to a strong random value}
-      # The .env files say localhost, which is correct for `make dev` but unreachable
-      # from inside the container. Point at the compose service instead.
+      # `:?` 表示变量为空时立刻报错退出，防止用空密钥把服务跑起来
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?必须为 JWT_SECRET_KEY 设置一个足够随机的长字符串}
+      # .env 文件里写的是 localhost（本机直跑时正确），但在容器里 localhost
+      # 指向容器自己，连不到数据库。这里改指 compose 的服务名，由内置 DNS 解析。
       - POSTGRES_HOST=db
+      - REDIS_HOST=redis
+      # 用 1 号库，避开其他服务可能占用的 0 号库，防止 key 互相覆盖
+      # （compose 起的 redis 是共享实例，不是这个项目独占的）
+      - REDIS_DB=1
     depends_on:
       db:
+        # 等到健康检查通过再启动，否则应用会在启动瞬间连不上库而崩溃重启
         condition: service_healthy
     healthcheck:
+      # 探 HTTP 层的 /health，能同时验证「进程活着」和「依赖可用」
+      # （/health 内部会检查数据库连通性）。
+      # 注意：镜像里必须有 curl；若基础镜像没装 curl，这里会一直判为
+      # unhealthy，可改成用 python 的 socket 探测替代。
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      # 应用启动要初始化数据库、加载模型注册表、编译图，给 10 秒宽限
       start_period: 10s
     restart: on-failure
     networks:
       - monitoring
 
-  # Prometheus
+  # ---------------------------------------------------------------------------
+  # Prometheus —— 指标采集
+  # ---------------------------------------------------------------------------
+  # 抓取目标写在 prometheus/prometheus.yml 里，默认抓 app:8000/metrics
+  # （应用侧由 app/core/metrics.py 暴露，starlette-prometheus 提供中间件指标）
   prometheus:
     image: prom/prometheus:latest
     ports:
@@ -82,27 +140,42 @@ services:
       - monitoring
     restart: always
 
-  # Grafana
+  # ---------------------------------------------------------------------------
+  # Grafana —— 可视化看板
+  # ---------------------------------------------------------------------------
   grafana:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
     volumes:
+      # grafana-storage 存用户、看板等运行期数据；下面两个挂载是「配置即代码」，
+      # 启动时自动把 grafana/dashboards 下的 JSON 看板导入
       - grafana-storage:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      # 看板与服务端数据源都是「配置即代码」，启动时自动导入。
+      # datasources 必须挂：只挂看板不挂数据源，面板会引用到不存在的数据源，全是空图。
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
     environment:
+      # 默认账号 admin / admin。生产环境必须改，或用 Docker secret 注入。
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      # 关掉自助注册，避免任何人注册进来就能看看板
       - GF_USERS_ALLOW_SIGN_UP=false
     networks:
       - monitoring
     restart: always
 
+  # ---------------------------------------------------------------------------
+  # cadvisor —— 容器级资源指标
+  # ---------------------------------------------------------------------------
+  # 采集每个容器的 CPU / 内存 / 网络 / 磁盘 IO，供 Grafana 里做容器维度看板。
+  # 只支持 Linux 宿主：它需要读 cgroup 与 /var/lib/docker，在 Docker Desktop
+  # （macOS / Windows）里通常拿不到有意义的容器数据，可以整个服务删掉。
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
     ports:
       - "8080:8080"
     volumes:
+      # 全部只读挂载：cadvisor 只观察不修改，:ro 能限制它被利用时的破坏面
       - /:/rootfs:ro
       - /var/run:/var/run:rw
       - /sys:/sys:ro
@@ -112,11 +185,15 @@ services:
     restart: always
 
 
+# 所有服务放在同一个自定义 bridge 网络里：
+# 好处是服务名即主机名（app、db、redis 可直接互相访问），
+# 且与宿主机上其他 compose 项目的网络隔离，不会串台。
 networks:
   monitoring:
     driver: bridge
 
+# 命名卷：由 Docker 管理，`docker compose down` 不会删（要删得加 -v）
 volumes:
   grafana-storage:
   postgres-data:
-  valkey-data:
+  redis-data:

@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>可观测性：让每一步都留下证据</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232f6df6'/%3E%3Ctext x='16' y='23' font-family='sans-serif' font-size='18' font-weight='700' fill='%23fff' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#f4f6fa; --panel:#ffffff; --ink:#1b2330; --sub:#5b6b7f; --faint:#8b9aab;
+    --line:#e3e8ef; --line-soft:#eef1f6;
+    --accent:#2f6df6; --accent-soft:#eaf0ff; --accent-deep:#1d4ed8;
+    --ok:#0f7a52; --ok-soft:#e8f6ef;
+    --warn:#9a6200; --warn-soft:#fff6e6;
+    --bad:#b8382c; --bad-soft:#fdecea;
+    --purple:#6853b8; --purple-soft:#f3f0fb;
+    --mono:"JetBrains Mono","Cascadia Code",Consolas,"SF Mono",Menlo,monospace;
+    --top-h:58px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;scroll-padding-top:120px}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.82 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent-deep);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  .topbar{
+    position:sticky;top:0;z-index:60;background:rgba(255,255,255,.93);
+    backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line);
+  }
+  .topbar .bar{max-width:1200px;margin:0 auto;padding:0 48px;height:var(--top-h);display:flex;align-items:center;gap:16px}
+  .brand{display:flex;align-items:center;gap:10px;white-space:nowrap}
+  .brand .mark{
+    width:28px;height:28px;border-radius:9px;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-size:13px;font-weight:800
+  }
+  .brand b{font-size:14.5px;letter-spacing:-.2px}
+  .brand em{font-style:normal;color:var(--faint);font-size:12px;border-left:1px solid var(--line);padding-left:10px}
+  .btn-print{
+    margin-left:auto;border:1px solid var(--line);background:#fff;color:var(--sub);border-radius:8px;
+    padding:6px 13px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap
+  }
+  .btn-print:hover{border-color:var(--accent);color:var(--accent-deep)}
+
+  .shell{max-width:1200px;margin:0 auto}
+  .doc{padding:34px 48px 80px;max-width:1200px;min-width:0}
+
+  .navstrip{max-width:1200px;margin:0 auto;padding:0 48px;position:relative}
+  .navstrip::before,.navstrip::after{
+    content:"";position:absolute;top:0;bottom:0;width:34px;pointer-events:none;
+    opacity:0;transition:opacity .18s;z-index:2
+  }
+  .navstrip::before{left:0;background:linear-gradient(to right,#fff,rgba(255,255,255,0))}
+  .navstrip::after{right:0;background:linear-gradient(to left,#fff,rgba(255,255,255,0))}
+  .navstrip.fade-l::before,.navstrip.fade-r::after{opacity:1}
+  .topnav{display:flex;gap:19px;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+  .topnav::-webkit-scrollbar{display:none}
+  .topnav a{
+    flex:none;font-size:13.2px;color:var(--sub);white-space:nowrap;line-height:1.5;
+    padding:9px 1px 8px;border-bottom:2px solid transparent
+  }
+  .topnav a .n{font-family:var(--mono);font-size:10.5px;color:#b3c0d1;margin-right:4px}
+  .topnav a:hover{color:var(--ink);text-decoration:none}
+  .topnav a.on{color:var(--accent-deep);border-bottom-color:var(--accent);font-weight:600}
+  .topnav a.on .n{color:var(--accent)}
+
+  p{margin:0 0 14px}
+  strong{font-weight:600;color:#0f172a}
+  ul,ol{margin:0 0 16px;padding-left:22px}
+  li{margin:0 0 7px}
+  li::marker{color:var(--faint)}
+  code{font-family:var(--mono);font-size:13px;background:#eef2f8;border-radius:4px;padding:1px 5px}
+
+  .goal h1{font-size:26px;line-height:1.35;margin:0 0 8px;letter-spacing:-.5px}
+  .goal .sub{color:var(--sub);font-size:14.5px;margin:0 0 18px}
+  .goals{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin:0 0 6px}
+  .goals div{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 12px;
+    font-size:12.4px;line-height:1.55;color:var(--ink)
+  }
+  .goals div b{display:block;font-size:11px;color:var(--accent);font-weight:700;margin-bottom:5px}
+
+  .flow{display:flex;flex-wrap:wrap;gap:6px;align-items:stretch;margin:14px 0 12px}
+  .flow .step{
+    flex:1;min-width:104px;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    padding:9px 10px;font-size:12.3px;line-height:1.5
+  }
+  .flow .step b{display:block;font-size:12.6px;margin-bottom:1px}
+  .flow .step span{color:var(--sub);font-size:11.6px}
+  .flow .arw{display:grid;place-items:center;color:#c3cddd;font-size:13px;flex:none;width:12px}
+
+  h2{font-size:21px;margin:44px 0 14px;display:flex;align-items:center;gap:10px;letter-spacing:-.3px}
+  h2 .num{
+    width:27px;height:27px;border-radius:8px;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-size:13px;font-weight:700;flex:none
+  }
+  h3{font-size:15.5px;margin:24px 0 8px}
+  h4{font-size:14.5px;margin:22px 0 8px;color:var(--ink)}
+
+  .pill{font-size:10.5px;font-weight:700;border-radius:4px;padding:1px 6px;margin-left:8px;flex:none;align-self:center}
+  .pill.p0{background:var(--bad-soft);color:var(--bad)}
+  .pill.p1{background:var(--warn-soft);color:var(--warn)}
+  .pill.p2{background:var(--accent-soft);color:var(--accent-deep)}
+
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel);margin:16px 0 20px}
+  table{border-collapse:collapse;width:100%;min-width:520px;font-size:13.2px;line-height:1.65}
+  th{
+    background:#f7f9fc;text-align:left;font-weight:600;color:var(--sub);font-size:12.1px;
+    padding:10px 13px;border-bottom:1px solid var(--line);white-space:nowrap
+  }
+  td{padding:10px 13px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.k{color:var(--ink);font-weight:600;white-space:nowrap}
+
+  .note{
+    border-left:3px solid var(--accent);background:var(--panel);border-radius:0 9px 9px 0;
+    padding:13px 17px;margin:18px 0;font-size:13.8px;color:var(--sub)
+  }
+  .note b{color:var(--ink)}
+  .note.warn{border-color:#e2a33c;background:var(--warn-soft)}
+  .note.bad{border-color:#cf4a3f;background:var(--bad-soft)}
+  .note.ok{border-color:#2f8f68;background:var(--ok-soft)}
+
+  .cards{display:grid;gap:11px;grid-template-columns:repeat(auto-fit,minmax(224px,1fr));margin:16px 0 20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+  .card h4{margin:0 0 5px;font-size:13.8px}
+  .card p{margin:0;font-size:12.8px;color:var(--sub);line-height:1.65}
+
+  /* ---- 架构图 ---- */
+  .fig{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px 6px;margin:20px 0 22px}
+  .fig-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink);margin:0 0 4px}
+  .fig-h i{font-style:normal;font-family:var(--mono);font-size:10.5px;font-weight:700;color:#fff;background:var(--accent);border-radius:4px;padding:1px 6px;flex:none;white-space:nowrap}
+  .fig-scroll{display:block}
+  .fig svg{display:block;width:100%;height:auto;margin-top:6px}
+  .fig figcaption{margin:9px 0 8px;font-size:12.3px;color:var(--sub);line-height:1.65}
+  .fig figcaption b{color:var(--ink);font-weight:600}
+
+  .checkpoint{background:var(--purple-soft);border:1px solid #ded7f2;border-radius:13px;padding:18px 22px;margin:22px 0 6px}
+  .checkpoint .cp-tag{
+    display:inline-block;font-size:11.5px;font-weight:700;color:#fff;background:var(--purple);
+    border-radius:5px;padding:2px 9px;margin-bottom:9px
+  }
+  .checkpoint h4{margin:0 0 7px;font-size:15px;color:#3f2f7a}
+  .checkpoint p,.checkpoint li{font-size:13.4px;color:#4a4266;line-height:1.72}
+  .checkpoint ul{margin-bottom:8px}
+  .checkpoint .hint{font-size:12.6px;color:#6b6390;border-top:1px dashed #d5cdec;padding-top:9px;margin-top:10px}
+
+  .takeaway{
+    background:#1b2330;color:#e9eef7;border-radius:10px;padding:12px 18px;
+    font-size:13.8px;font-weight:500;margin:20px 0 4px;line-height:1.7
+  }
+  .takeaway::before{
+    content:"一句话带走";display:block;font-size:10.5px;color:#8b9aab;
+    letter-spacing:.6px;margin-bottom:3px;font-weight:400
+  }
+
+  .pager{display:flex;gap:11px;margin:44px 0 0;padding-top:20px;border-top:1px solid var(--line)}
+  .pager a{flex:1;border:1px solid var(--line);background:var(--panel);border-radius:11px;padding:13px 17px;color:var(--sub)}
+  .pager a:hover{border-color:#c9d8f5;text-decoration:none}
+  .pager a em{display:block;font-style:normal;font-size:11.5px;color:var(--faint);margin-bottom:2px}
+  .pager a b{color:var(--ink);font-size:13.8px}
+  .pager a.next{text-align:right}
+
+  .totop{
+    position:fixed;right:26px;bottom:26px;width:36px;height:36px;border-radius:10px;
+    background:#fff;border:1px solid var(--line);color:var(--sub);cursor:pointer;display:none;
+    place-items:center;font-size:14px;z-index:40
+  }
+  .totop.show{display:grid}
+
+  @media (max-width:520px){
+    .btn-print{font-size:0;padding:6px 10px}
+    .btn-print::after{content:"打印";font-size:12px}
+    .brand b{font-size:13.5px}
+  }
+  @media (max-width:900px){
+    .brand em{display:none}
+    .topbar .bar{padding:0 18px}
+    .navstrip{padding:0 18px}
+    .navstrip::before,.navstrip::after{width:46px}
+    .topnav{gap:15px}
+    .topnav a{font-size:12.8px}
+    .doc{padding:22px 18px 64px}
+    .goals{grid-template-columns:repeat(2,1fr)}
+    .flow{flex-direction:column}
+    .flow .step{min-width:0}
+    .flow .arw{display:none}
+    h2{font-size:19px}
+    .fig{padding:12px 12px 4px}
+    .fig-scroll{overflow-x:auto;scrollbar-width:thin}
+    .fig-scroll svg{min-width:640px}
+    .fig figcaption::after{content:"（图可左右滑动查看）";display:block;color:#b3c0d1;margin-top:2px}
+  }
+  @media print{
+    .topbar,.totop,.pager{display:none!important}
+    body{background:#fff;font-size:10.5pt}
+    .shell{display:block;max-width:none}
+    .doc{padding:0;max-width:none}
+    section,.note,.checkpoint,.cards,.flow,.tblwrap,.takeaway,.fig{break-inside:avoid;page-break-inside:avoid}
+    h2{break-after:avoid;page-break-after:avoid;font-size:13pt}
+    .goals div,.note,.checkpoint,th{background:#fafbfd!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .takeaway{background:#1b2330!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    a{color:var(--ink)}
+  }
+
+  /* ---- 代码块（本篇新增） ---- */
+  .codeblock{background:#f8fafc;border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin:14px 0 18px;overflow-x:auto}
+  .codeblock pre{margin:0;font-family:var(--mono);font-size:12.4px;line-height:1.8;color:#1b2330;white-space:pre}
+  .codeblock .cm{color:#8b9aab}
+  @media (max-width:900px){.codeblock pre{font-size:11.6px}}
+  @media print{.codeblock{background:#fafbfd!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="bar">
+    <div class="brand">
+      <div class="mark">A</div>
+      <b>可观测性：让每一步都留下证据</b>
+      <em>第三天 · 追踪、评分与看板</em>
+    </div>
+    <button class="btn-print" onclick="window.print()">打印 / 导出 PDF</button>
+  </div>
+  <div class="navstrip">
+    <nav class="topnav" id="topnav">
+      <a href="#goal">本篇目标</a>
+      <a href="#map">路线图</a>
+      <a href="#c1"><span class="n">1</span>两种问法</a>
+      <a href="#c2"><span class="n">2</span>四个概念</a>
+      <a href="#c3"><span class="n">3</span>三个接入点</a>
+      <a href="#c4"><span class="n">4</span>云端与自建</a>
+      <a href="#c5"><span class="n">5</span>自研边界</a>
+      <a href="#c6"><span class="n">6</span>接进评测</a>
+      <a href="#c7"><span class="n">7</span>验收与排错</a>
+    </nav>
+  </div>
+</header>
+
+<div class="shell">
+  <main class="doc">
+
+    <section id="goal" class="goal">
+      <h1>可观测性：让每一步都留下证据</h1>
+      <p class="sub">Agent 出故障的时候，日志只会告诉你「它挂了」，很少告诉你「它在第几步、因为什么挂的」。真正能救命的，是把一次请求还原成一棵能点开的树；再往上，是把这些树变成一组能重复跑的题。</p>
+      <div class="goals">
+        <div><b>01 分清</b>日志、追踪、评分各自回答什么问题</div>
+        <div><b>02 说清</b>会话、追踪、节点、分数四者的关系</div>
+        <div><b>03 接对</b>三个接入点与三个必须写对的归因键</div>
+        <div><b>04 判断</b>云端还是自建，自己写还是用现成的</div>
+        <div><b>05 跑通</b>从一条真实请求到一组回归题目</div>
+      </div>
+    </section>
+
+    <section id="map">
+      <div class="flow">
+        <div class="step"><b>建模型</b><span>先搞清四种数据</span></div>
+        <div class="arw">→</div>
+        <div class="step"><b>接链路</b><span>三个位置挂对</span></div>
+        <div class="arw">→</div>
+        <div class="step"><b>选看板</b><span>哪层自研哪层不</span></div>
+        <div class="arw">→</div>
+        <div class="step"><b>进评测</b><span>把线上数据变成题</span></div>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:110px">阶段</th><th>你要做的事</th><th style="width:250px">这一段的产出</th><th style="width:64px">优先级</th></tr>
+          <tr><td class="k">建模型</td><td>认清会话、追踪、节点、分数分别是什么、谁挂在谁身上</td><td>一张数据模型图</td><td>P0</td></tr>
+          <tr><td class="k">接链路</td><td>在入口、图节点、工具函数三处把上下文接上来</td><td>一次请求能点开成树</td><td>P0</td></tr>
+          <tr><td class="k">选看板</td><td>按「看一段还是看一次」「谁来看」决定自研到什么程度</td><td>一张分工表</td><td>P0</td></tr>
+          <tr><td class="k">进评测</td><td>把低分请求收成固定题集，改动后重跑</td><td>一份带基线的题集</td><td>P1</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <section id="c1">
+      <h2><span class="num">1</span>两种问法，两种工具<span class="pill p0">P0</span></h2>
+      <p>场景先摆出来：用户昨天问了一句「我这种情况能不能报销」，系统答得头头是道，但答错了。今天要你给一个解释。</p>
+      <p>这时候你会问出三个不同的问题，它们需要三种不同的证据：</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:104px">问法</th><th>你要的证据</th><th style="width:112px">对应工具</th></tr>
+          <tr><td class="k">有没有出事</td><td>哪个用户、什么时间、哪个接口、状态码多少</td><td>结构化日志</td></tr>
+          <tr><td class="k">死在哪一步</td><td>这次请求的完整调用树：每步的输入输出、耗时、花了多少钱</td><td>链路追踪</td></tr>
+          <tr><td class="k">是不是变坏了</td><td>同一批题重跑一遍，分数比上次掉了几何</td><td>评测</td></tr>
+        </table>
+      </div>
+      <p>第一种问法日志就能答。麻烦的是后两种——尤其是 Agent 这类系统，最常见的故障形态是<b>什么都没报错，但答案是错的</b>。没有异常、没有 500、日志里一行红字都没有，你说它挂了都不成立。</p>
+      <p>错误藏在语义里，而语义不在日志的字段里。这就是为什么「有日志就够了」在 Agent 项目里特别容易翻车：日志是按<b>事件</b>写的，而问题出在<b>链路</b>上。</p>
+
+      <figure class="fig">
+        <div class="fig-h"><i>图 1</i>同一件事，一行日志和一整棵树</div>
+        <div class="fig-scroll">
+        <svg viewBox="0 0 900 366" role="img" aria-label="左侧是一行日志只能说明请求成功，右侧是调用树能看到每一步的输入输出与耗时">
+          <defs><marker id="b61" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#c3cddd"/></marker></defs>
+
+          <text x="132" y="34" text-anchor="middle" font-size="12.5" font-weight="600" fill="#b8382c">日志：请求成功了</text>
+          <rect x="24" y="48" width="216" height="88" rx="9" fill="#fdecea" stroke="#f0c3bd"/>
+          <text x="38" y="70" font-family="JetBrains Mono,Consolas,monospace" font-size="10.2" fill="#7a2b22">chat_request_processed</text>
+          <text x="38" y="88" font-family="JetBrains Mono,Consolas,monospace" font-size="10.2" fill="#7a2b22">session_id=s-8f3a</text>
+          <text x="38" y="106" font-family="JetBrains Mono,Consolas,monospace" font-size="10.2" fill="#7a2b22">status=200 elapsed=2.41s</text>
+          <text x="38" y="124" font-size="10.6" fill="#b8382c">除了「成功」，什么都读不出来</text>
+
+          <text x="132" y="182" text-anchor="middle" font-size="11.4" fill="#8b9aab">用户说：答案不对</text>
+          <line x1="132" y1="192" x2="132" y2="216" stroke="#c3cddd" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <rect x="36" y="222" width="192" height="52" rx="9" fill="#fff6e6" stroke="#f0d19a"/>
+          <text x="132" y="243" text-anchor="middle" font-size="11.6" font-weight="600" fill="#9a6200">日志答不上来</text>
+          <text x="132" y="261" text-anchor="middle" font-size="10.6" fill="#9a6200">「哪一步开始错的」</text>
+
+          <line x1="268" y1="184" x2="308" y2="184" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b61)"/>
+
+          <text x="626" y="34" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1d4ed8">追踪：看得到每一步</text>
+
+          <rect x="392" y="50" width="176" height="42" rx="8" fill="#eaf0ff" stroke="#b9cff7"/>
+          <text x="402" y="68" font-size="11.4" font-weight="600" fill="#1d4ed8">chat（根）</text>
+          <text x="402" y="84" font-size="10.2" fill="#3b5b8f">2.41s · $0.0041 · 12k tok</text>
+
+          <line x1="480" y1="92" x2="480" y2="112" stroke="#c3cddd"/>
+          <line x1="316" y1="112" x2="644" y2="112" stroke="#c3cddd"/>
+          <line x1="316" y1="112" x2="316" y2="126" stroke="#c3cddd"/>
+          <line x1="480" y1="112" x2="480" y2="126" stroke="#c3cddd"/>
+          <line x1="644" y1="112" x2="644" y2="126" stroke="#c3cddd"/>
+
+          <rect x="256" y="126" width="120" height="46" rx="7" fill="#f8fafc" stroke="#dbe3ef"/>
+          <text x="266" y="144" font-size="11" font-weight="600" fill="#1b2330">memory.search</text>
+          <text x="266" y="160" font-size="10" fill="#5b6b7f">0.08s · 命中 3 条</text>
+
+          <rect x="404" y="126" width="152" height="46" rx="7" fill="#f8fafc" stroke="#dbe3ef"/>
+          <text x="414" y="144" font-size="11" font-weight="600" fill="#1b2330">llm（第 2 轮）</text>
+          <text x="414" y="160" font-size="10" fill="#5b6b7f">1.9s · 9.4k tok</text>
+
+          <rect x="584" y="126" width="120" height="46" rx="7" fill="#f8fafc" stroke="#dbe3ef"/>
+          <text x="594" y="144" font-size="11" font-weight="600" fill="#1b2330">tool.query</text>
+          <text x="594" y="160" font-size="10" fill="#5b6b7f">0.31s · 空结果</text>
+
+          <line x1="480" y1="172" x2="480" y2="190" stroke="#c3cddd"/>
+          <line x1="392" y1="190" x2="568" y2="190" stroke="#c3cddd"/>
+          <line x1="392" y1="190" x2="392" y2="204" stroke="#c3cddd"/>
+          <line x1="568" y1="190" x2="568" y2="204" stroke="#c3cddd"/>
+
+          <rect x="326" y="204" width="132" height="44" rx="7" fill="#fff6e6" stroke="#f0d19a"/>
+          <text x="336" y="222" font-size="11" font-weight="600" fill="#9a6200">retriever</text>
+          <text x="336" y="238" font-size="10" fill="#9a6200">召回 0 条 · 这才是根因</text>
+
+          <rect x="502" y="204" width="132" height="44" rx="7" fill="#f8fafc" stroke="#dbe3ef"/>
+          <text x="512" y="222" font-size="11" font-weight="600" fill="#1b2330">llm（第 3 轮）</text>
+          <text x="512" y="238" font-size="10" fill="#5b6b7f">凭常识编了个答案</text>
+
+          <rect x="24" y="286" width="852" height="56" rx="9" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="44" y="308" font-size="12.2" font-weight="600" fill="#0f7a52">同一件事，两种结论</text>
+          <text x="44" y="328" font-size="11.4" fill="#0f7a52">日志：一切正常，200，耗时 2.4 秒。追踪：检索召回 0 条，模型改用常识作答 —— 问题不在模型，在检索。</text>
+        </svg>
+        </div>
+        <figcaption>左边那行日志没有任何问题，它只是<b>没打算回答「为什么」</b>。日志的成本结构决定了它只能记事件；想知道链路，就得在调用链上埋点，这是两种工具，不是同一个工具的两个视图。</figcaption>
+      </figure>
+      <div class="takeaway">日志回答「有没有出事」，追踪回答「哪一步出的事」，评分回答「这次改动是不是变坏了」——三者不能互相替代。</div>
+    </section>
+
+    <section id="c2">
+      <h2><span class="num">2</span>四个概念，一句话一个<span class="pill p0">P0</span></h2>
+      <p>Langfuse 的数据模型不复杂，但一开始搞混「追踪」和「节点」，后面所有统计都会对不上。这四个概念是层层包含的关系：</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:130px">概念</th><th>是什么</th><th style="width:230px">典型用途</th></tr>
+          <tr><td class="k">Session 会话</td><td>一段连续对话。多轮之间的追踪都挂在它下面，靠 session_id 串起来</td><td>「这个用户整段对话里发生了什么」</td></tr>
+          <tr><td class="k">Trace 追踪</td><td>一次请求 = 一棵树。有输入、输出、总耗时、总花费</td><td>「这一问为什么答错」</td></tr>
+          <tr><td class="k">Observation 节点</td><td>树上的一个节点。分四类：span、generation、event、tool</td><td>「检索花了多久、召回了什么」</td></tr>
+          <tr><td class="k">Score 分数</td><td>挂在某棵树或某个节点上的一次评价，可来自人工、规则或模型</td><td>「这次的回答合格吗」</td></tr>
+        </table>
+      </div>
+
+      <figure class="fig">
+        <div class="fig-h"><i>图 2</i>会话装追踪，追踪装节点，分数挂在旁边</div>
+        <div class="fig-scroll">
+        <svg viewBox="0 0 900 320" role="img" aria-label="数据模型：会话下面挂多条追踪，追踪内部是节点树，分数挂在追踪或节点上">
+          <rect x="30" y="30" width="580" height="258" rx="12" fill="#f3f0fb" stroke="#cfc4ee"/>
+          <text x="48" y="54" font-size="12.4" font-weight="600" fill="#5b46a8">Session　一段对话</text>
+          <text x="184" y="54" font-size="10.8" fill="#7b7392">session_id=s-8f3a　12 次追踪</text>
+
+          <rect x="58" y="72" width="524" height="76" rx="10" fill="#fff" stroke="#dbd3f0"/>
+          <text x="74" y="94" font-size="11.6" font-weight="600" fill="#1b2330">Trace　第 1 轮</text>
+          <text x="74" y="112" font-size="10.4" fill="#5b6b7f">输入：我这种情况能不能报销</text>
+          <rect x="330" y="86" width="100" height="22" rx="5" fill="#f8fafc" stroke="#e3e8ef"/>
+          <text x="380" y="101" text-anchor="middle" font-size="9.8" fill="#5b6b7f">generation</text>
+          <rect x="438" y="86" width="100" height="22" rx="5" fill="#f8fafc" stroke="#e3e8ef"/>
+          <text x="488" y="101" text-anchor="middle" font-size="9.8" fill="#5b6b7f">span</text>
+          <text x="74" y="132" font-size="10" fill="#8b9aab">节点可以嵌套，层级就是调用深度</text>
+
+          <rect x="58" y="158" width="524" height="62" rx="10" fill="#fff" stroke="#b9cff7" stroke-width="1.5"/>
+          <text x="74" y="180" font-size="11.6" font-weight="600" fill="#1d4ed8">Trace　第 2 轮　← 出问题的是这次</text>
+          <text x="74" y="198" font-size="10.4" fill="#5b6b7f">retriever 召回 0 条 → 模型改用常识作答 → 答错</text>
+          <rect x="470" y="168" width="100" height="22" rx="5" fill="#fdecea" stroke="#f0c3bd"/>
+          <text x="520" y="183" text-anchor="middle" font-size="9.8" fill="#b8382c">ERROR 节点</text>
+          <text x="74" y="212" font-size="10" fill="#8b9aab">节点上可以单独挂分数</text>
+
+          <rect x="58" y="232" width="524" height="36" rx="8" fill="#f8fafc" stroke="#eef1f6"/>
+          <text x="74" y="255" font-size="10.8" fill="#5b6b7f">Trace　第 3 轮　……（同一个 session_id 往下排）</text>
+
+          <line x1="610" y1="120" x2="660" y2="120" stroke="#9db4d0" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <line x1="610" y1="188" x2="660" y2="188" stroke="#9db4d0" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+          <rect x="664" y="88" width="204" height="64" rx="9" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="680" y="110" font-size="11.4" font-weight="600" fill="#0f7a52">Score　挂在追踪上</text>
+          <text x="680" y="128" font-size="10.4" fill="#0f7a52">correctness=0.2</text>
+          <text x="680" y="144" font-size="10" fill="#3f7a63">一次请求一个总评</text>
+
+          <rect x="664" y="160" width="204" height="64" rx="9" fill="#eef3ff" stroke="#b9cff7"/>
+          <text x="680" y="182" font-size="11.4" font-weight="600" fill="#1d4ed8">Score　挂在节点上</text>
+          <text x="680" y="200" font-size="10.4" fill="#3b5b8f">recall_relevance=0.1</text>
+          <text x="680" y="216" font-size="10" fill="#3b5b8f">定位到「检索」这一环</text>
+
+          <text x="766" y="248" text-anchor="middle" font-size="10.6" fill="#8b9aab">分数挂得越深，</text>
+          <text x="766" y="264" text-anchor="middle" font-size="10.6" fill="#8b9aab">结论就越能落到具体一环</text>
+        </svg>
+        </div>
+        <figcaption>挂分数是这套模型里最容易被忽略的一半。<b>只给整次请求打一个总分，等于重新回到「感觉变差了」</b>；把分数挂到检索节点上，才知道要改的是召回还是提示词。</figcaption>
+      </figure>
+
+      <h3>只有 generation 会算钱</h3>
+      <p>节点四类里，成本与 token 只统计 <code>generation</code>。如果你把一次模型调用记成了普通 span，界面上就会出现「有调用、但花费为 0」的怪现象——报表看不出问题，账单却对不上。</p>
+      <p>反过来的坑同样常见：把检索、工具调用也记成 generation，成本会被虚高一截，因为你把「数据库查询」也算成了「模型推理」。</p>
+      <div class="note warn"><b>判断口诀：</b>要花钱的那一步记 generation，不花钱但要看耗时的记 span，纯时点标记记 event。这条规则贯穿整套报表的可信度。</div>
+      <div class="takeaway">会话装追踪、追踪装节点、分数挂在节点上；只有 generation 算钱，记错这一点，后面所有报表都是错的。</div>
+    </section>
+
+    <section id="c3">
+      <h2><span class="num">3</span>三个接入点，三个必须写对的键<span class="pill p0">P0</span></h2>
+      <p>接入的工程量比想象中小，但要接对位置。三处就够：</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:132px">位置</th><th>挂什么</th><th style="width:210px">不挂会怎样</th></tr>
+          <tr><td class="k">请求入口</td><td>会话 ID、用户 ID、标签。挂一次，整条链路继承</td><td>每个节点都得手动补，漏一个就断链</td></tr>
+          <tr><td class="k">图与链的节点</td><td>自动生成：模型调用、工具调用各成一节</td><td>只剩一棵光秃秃的根节点，看不到内部</td></tr>
+          <tr><td class="k">业务关键步骤</td><td>手动开 span，补业务语义：召回几条、命中哪个策略</td><td>技术上有记录，但解释不了业务上为什么错</td></tr>
+        </table>
+      </div>
+
+      <p>第三处最容易被跳过，也最值钱。检索召回了 0 条这件事，框架不知道，只有你的业务代码知道。多写五行，排查时省两小时。</p>
+
+      <h3>入口挂一次：包住整段被追踪的逻辑</h3>
+      <div class="codeblock"><pre><span class="cm"># app/api/v1/chatbot.py —— 在请求入口挂一次，图里所有调用自动继承</span>
+with trace_attributes(session_id=session.id, user_id=str(session.user_id), tags=["chat"]):
+    result = await agent.get_response(...)</pre></div>
+      <p>这个上下文管理器做的事情很朴素：把会话、用户、标签写进当前调用上下文，之后创建的每个节点都带上它们。它还有个省事的设计——<b>你没传的字段，会自动去请求上下文里取</b>，而那里已经被日志中间件绑过一次。同一份上下文，日志和追踪共用，不用传两遍。</p>
+
+      <h3>三个键，写错等于没接</h3>
+      <p>这是接入阶段最高频的坑，而且症状很隐蔽：追踪列表里明明有数据，但「会话」页是空的、按用户筛不出东西、成本按用户统计全是零。</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:200px">你以为的写法</th><th style="width:220px">实际生效的键</th><th>写错的症状</th></tr>
+          <tr><td class="k"><code>session_id</code></td><td class="k"><code>langfuse_session_id</code></td><td>追踪有数据，会话页空空如也</td></tr>
+          <tr><td class="k"><code>user_id</code></td><td class="k"><code>langfuse_user_id</code></td><td>按用户看成本、看延迟，永远是空的</td></tr>
+          <tr><td class="k"><code>tags</code></td><td class="k"><code>langfuse_tags</code></td><td>标签筛选失效，没法按环境分组</td></tr>
+        </table>
+      </div>
+      <p>Langfuse 的 LangChain 集成只认这三个带前缀的键，其余键一律当普通元数据存着，不会提升成追踪级属性。项目里的写法是这样的：</p>
+      <div class="codeblock"><pre><span class="cm"># 业务自用的键照写，同时补上带前缀的三兄弟，两套并存不冲突</span>
+"metadata": {
+    "user_id": user_id, "session_id": session_id,        <span class="cm"># 日志用</span>
+    "langfuse_session_id": session_id,                   <span class="cm"># 追踪用</span>
+    "langfuse_user_id": user_id,
+    "langfuse_tags": ["chat", settings.ENVIRONMENT.value],
+},
+"run_name": "chat",   <span class="cm"># 不设，界面上所有追踪都叫 LangGraph</span></pre></div>
+
+      <p>还有两个次要但会让人怀疑人生的坑：</p>
+      <ul>
+        <li><b>命令行脚本不 flush 就退出</b>——追踪数据在缓冲区里，进程一退全丢。服务进程常驻看不出来，脚本一跑一个空。项目里封装了 <code>flush()</code>，脚本末尾调一次。</li>
+        <li><b>拿中文昵称当用户 ID</b>——追踪属性要求 US-ASCII 且不超过 200 字符，中文会被静默丢弃。ID 用主键，昵称放元数据。</li>
+      </ul>
+      <div class="note"><b>一条自检命令省半天：</b><code>make trace-smoke</code> 会造一条探针追踪、强制上报，并打印直链。先证明「key 通、数据到」，再去查业务代码——顺序反了，你会同时怀疑三件事。</div>
+      <div class="takeaway">入口挂一次、节点自动生、业务步骤手动补；三个带 langfuse_ 前缀的键写不对，接了也等于没接。</div>
+    </section>
+
+    <section id="c4">
+      <h2><span class="num">4</span>云端还是自建：先算清要几个容器<span class="pill p1">P1</span></h2>
+      <p>这件事没有悬念式的答案，只有两种代价。先把账摆开：</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:120px">方案</th><th>代价</th><th style="width:220px">适合谁</th></tr>
+          <tr><td class="k">云端免费版</td><td>每月 5 万 units，数据留 30 天，2 个成员，摄入上限 1000 请求/分</td><td>自用到小团队验证，数据不敏感</td></tr>
+          <tr><td class="k">云端付费版</td><td>每月 29 美元起，10 万 units，数据留 90 天，成员不限</td><td>团队协作，不想碰运维</td></tr>
+          <tr><td class="k">自建</td><td>六个容器：Web、Worker、Postgres、ClickHouse、Redis、MinIO；约 2 GB 内存；升级、备份、证书全归你</td><td>数据不能出内网，或要长期留存</td></tr>
+        </table>
+      </div>
+      <p>注意自建的复杂度不在「跑起来」，在「跑得久」。文档里写得很直白：事件先落对象存储，再由后台进程灌进 ClickHouse；这意味着出事的时候，你要会看四个中间件的状态，而不只是一个日志文件。</p>
+
+      <figure class="fig">
+        <div class="fig-h"><i>图 3</i>云端只要一个地址，自建要养六个进程</div>
+        <div class="fig-scroll">
+        <svg viewBox="0 0 900 330" role="img" aria-label="左侧云端方案应用只连一个地址，右侧自建方案应用连本机服务，背后还有四个存储组件">
+          <rect x="24" y="26" width="392" height="278" rx="12" fill="#eef3ff" stroke="#b9cff7"/>
+          <text x="46" y="52" font-size="12.6" font-weight="600" fill="#1d4ed8">云端：一个地址</text>
+
+          <rect x="52" y="78" width="150" height="54" rx="9" fill="#fff" stroke="#b9cff7"/>
+          <text x="127" y="100" text-anchor="middle" font-size="11.6" font-weight="600" fill="#1b2330">你的服务</text>
+          <text x="127" y="118" text-anchor="middle" font-size="10.4" fill="#5b6b7f">三个环境变量</text>
+
+          <line x1="202" y1="105" x2="256" y2="105" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b61)"/>
+          <text x="229" y="96" text-anchor="middle" font-size="10" fill="#3b5b8f">HTTPS</text>
+
+          <rect x="258" y="78" width="132" height="54" rx="9" fill="#fff" stroke="#b9cff7"/>
+          <text x="324" y="100" text-anchor="middle" font-size="11.6" font-weight="600" fill="#1b2330">托管服务</text>
+          <text x="324" y="118" text-anchor="middle" font-size="10.4" fill="#5b6b7f">存储与索引都归它</text>
+
+          <rect x="52" y="156" width="338" height="128" rx="9" fill="#fff" stroke="#dbe3ef"/>
+          <text x="70" y="180" font-size="11.4" font-weight="600" fill="#0f7a52">你只需要关心</text>
+          <text x="70" y="202" font-size="10.8" fill="#5b6b7f">· key 有没有过期（换 key 要重启）</text>
+          <text x="70" y="222" font-size="10.8" fill="#5b6b7f">· 数据只留 30 天的窗口够不够查</text>
+          <text x="70" y="242" font-size="10.8" fill="#5b6b7f">· 量超了要不要升级（超了不报错，是抽样）</text>
+          <text x="70" y="264" font-size="10.8" fill="#b8382c">· 敏感对话是否允许出内网</text>
+
+          <rect x="444" y="26" width="432" height="278" rx="12" fill="#f8fafc" stroke="#dbe3ef"/>
+          <text x="466" y="52" font-size="12.6" font-weight="600" fill="#5b6b7f">自建：六个容器</text>
+
+          <rect x="466" y="78" width="128" height="54" rx="9" fill="#fff" stroke="#dbe3ef"/>
+          <text x="530" y="100" text-anchor="middle" font-size="11.6" font-weight="600" fill="#1b2330">你的服务</text>
+          <text x="530" y="118" text-anchor="middle" font-size="10.4" fill="#5b6b7f">localhost:3010</text>
+
+          <line x1="594" y1="105" x2="634" y2="105" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b61)"/>
+
+          <rect x="636" y="78" width="104" height="54" rx="9" fill="#fff" stroke="#b9cff7"/>
+          <text x="688" y="100" text-anchor="middle" font-size="11.2" font-weight="600" fill="#1d4ed8">Web</text>
+          <text x="688" y="118" text-anchor="middle" font-size="10" fill="#5b6b7f">UI + API</text>
+
+          <rect x="752" y="78" width="104" height="54" rx="9" fill="#fff" stroke="#b9cff7"/>
+          <text x="804" y="100" text-anchor="middle" font-size="11.2" font-weight="600" fill="#1d4ed8">Worker</text>
+          <text x="804" y="118" text-anchor="middle" font-size="10" fill="#5b6b7f">异步消费</text>
+
+          <rect x="636" y="146" width="104" height="46" rx="8" fill="#f4f6fa" stroke="#e3e8ef"/>
+          <text x="688" y="166" text-anchor="middle" font-size="10.6" font-weight="600" fill="#5b6b7f">Postgres</text>
+          <text x="688" y="182" text-anchor="middle" font-size="9.6" fill="#8b9aab">事务数据</text>
+
+          <rect x="752" y="146" width="104" height="46" rx="8" fill="#f4f6fa" stroke="#e3e8ef"/>
+          <text x="804" y="166" text-anchor="middle" font-size="10.6" font-weight="600" fill="#5b6b7f">ClickHouse</text>
+          <text x="804" y="182" text-anchor="middle" font-size="9.6" fill="#8b9aab">追踪与评分</text>
+
+          <rect x="636" y="204" width="104" height="46" rx="8" fill="#f4f6fa" stroke="#e3e8ef"/>
+          <text x="688" y="224" text-anchor="middle" font-size="10.6" font-weight="600" fill="#5b6b7f">Redis</text>
+          <text x="688" y="240" text-anchor="middle" font-size="9.6" fill="#8b9aab">队列与缓存</text>
+
+          <rect x="752" y="204" width="104" height="46" rx="8" fill="#f4f6fa" stroke="#e3e8ef"/>
+          <text x="804" y="224" text-anchor="middle" font-size="10.6" font-weight="600" fill="#5b6b7f">MinIO</text>
+          <text x="804" y="240" text-anchor="middle" font-size="9.6" fill="#8b9aab">对象存储</text>
+
+          <text x="466" y="278" font-size="10.6" fill="#9a6200">端口会撞：本项目自己的库占 5432、缓存占 6379、看板占 3000，</text>
+          <text x="466" y="294" font-size="10.6" fill="#9a6200">自建那套已经整体挪开（5433 / 6380 / 3010），可以并存。</text>
+        </svg>
+        </div>
+        <figcaption>右边这套最容易被低估的是 ClickHouse 的运维：它吃内存、有它自己的迁移与分区策略。<b>数据必须自己拿在手里的时候，这些代价是值得的；只是「想看看效果」，不值得。</b></figcaption>
+      </figure>
+
+      <p>项目里给了一套可直接起的最小实现：<code>make langfuse-up</code>，端口全部避让开发栈，起来后浏览器开 <code>localhost:3010</code> 建组织、拿 key、填进 <code>.env</code>，然后 <code>make langfuse-down</code> 随时收工。</p>
+      <div class="note warn"><b>版本对齐：</b>SDK 与服务端不要一个 3.x 一个 4.x 硬凑。上传协议仍在演进，跨大版本混搭的典型症状是「界面能看到追踪，但成本字段是空的」——这种问题极难查，因为它不报错。</div>
+      <div class="takeaway">自建的成本不在钱，在「谁来养 ClickHouse」；数据不出内网才自建，否则先用云端免费额度把它用起来。</div>
+    </section>
+
+    <section id="c5">
+      <h2><span class="num">5</span>可视化：什么该自己写，什么不该<span class="pill p0">P0</span></h2>
+      <p>这个问题可以直接给结论：<b>追踪树永远不要自研，业务报表才值得自己写。</b></p>
+      <p>理由不在于「写不出来」，在于投入产出比悬殊。一个能用的追踪界面要做：树状渲染、按属性检索、多次调用对比、分享链接、权限、大字段截断、以及背后那套列式存储的查询优化。这不是一个页面的工作量，是一个产品的工作量——而它已经被做完并且开源了。</p>
+
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:216px">你要看的东西</th><th style="width:130px">谁在看</th><th>用什么</th><th style="width:88px">自己写吗</th></tr>
+          <tr><td class="k">某次请求的调用树、每步输入输出</td><td>工程师查故障</td><td>Langfuse 界面</td><td>不写</td></tr>
+          <tr><td class="k">吞吐、错误率、P95、资源占用</td><td>值班 / 运维</td><td>Prometheus + Grafana（compose 已编排）</td><td>不写</td></tr>
+          <tr><td class="k">成本、会话量、质量分数趋势</td><td>你、主管、周报</td><td>先用界面自带看板，再补一个命令行报表</td><td>只写薄壳</td></tr>
+          <tr><td class="k">和业务数据联查（订单、课程、报名记录）</td><td>业务方</td><td>自己的查询 + 已有 BI</td><td>写，但只读</td></tr>
+        </table>
+      </div>
+
+      <p>为什么「只写薄壳」是更好的选择？因为聚合类需求变化太快：今天要看日成本，明天要看单会话成本，后天要看某个工具的错误率。这类需求用一张命令行表格几行代码就能改完，做成前端页面就变成一次排期。</p>
+
+      <figure class="fig">
+        <div class="fig-h"><i>图 4</i>三个问题，决定要不要动手</div>
+        <div class="fig-scroll">
+        <svg viewBox="0 0 900 300" role="img" aria-label="决策流程：看一次请求就用现成界面，看一段时间再问是否需要联查业务数据，不需要就用命令行报表">
+          <rect x="48" y="106" width="150" height="64" rx="10" fill="#eaf0ff" stroke="#b9cff7"/>
+          <text x="123" y="132" text-anchor="middle" font-size="11.4" font-weight="600" fill="#1d4ed8">你要看的是</text>
+          <text x="123" y="152" text-anchor="middle" font-size="11.4" font-weight="600" fill="#1d4ed8">一次，还是一段？</text>
+
+          <line x1="198" y1="126" x2="252" y2="78" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b61)"/>
+          <text x="212" y="96" font-size="10" fill="#8b9aab">一次</text>
+          <line x1="198" y1="150" x2="252" y2="198" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b61)"/>
+          <text x="212" y="182" font-size="10" fill="#8b9aab">一段</text>
+
+          <rect x="256" y="46" width="176" height="60" rx="9" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="344" y="70" text-anchor="middle" font-size="11.2" font-weight="600" fill="#0f7a52">直接用现成界面</text>
+          <text x="344" y="90" text-anchor="middle" font-size="10.2" fill="#0f7a52">搜索、对比、分享它都有了</text>
+
+          <rect x="256" y="172" width="176" height="60" rx="9" fill="#fff6e6" stroke="#f0d19a"/>
+          <text x="344" y="196" text-anchor="middle" font-size="11.2" font-weight="600" fill="#9a6200">要跟业务数据联查吗</text>
+          <text x="344" y="216" text-anchor="middle" font-size="10.2" fill="#9a6200">订单、课程、报名记录</text>
+
+          <line x1="432" y1="188" x2="492" y2="150" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b61)"/>
+          <text x="446" y="160" font-size="10" fill="#8b9aab">要</text>
+          <line x1="432" y1="214" x2="492" y2="248" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b61)"/>
+          <text x="446" y="244" font-size="10" fill="#8b9aab">不要</text>
+
+          <rect x="496" y="112" width="180" height="72" rx="9" fill="#f3f0fb" stroke="#cfc4ee"/>
+          <text x="586" y="136" text-anchor="middle" font-size="11.2" font-weight="600" fill="#5b46a8">写只读查询层</text>
+          <text x="586" y="156" text-anchor="middle" font-size="10.2" fill="#7b7392">接你已有的报表工具</text>
+          <text x="586" y="174" text-anchor="middle" font-size="10.2" fill="#7b7392">不碰写接口、不存第二份</text>
+
+          <rect x="496" y="220" width="180" height="72" rx="9" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="586" y="244" text-anchor="middle" font-size="11.2" font-weight="600" fill="#0f7a52">命令行报表</text>
+          <text x="586" y="264" text-anchor="middle" font-size="10.2" fill="#0f7a52">聚合、排序、出数</text>
+          <text x="586" y="282" text-anchor="middle" font-size="10.2" fill="#0f7a52">改一次几行代码</text>
+
+          <rect x="712" y="120" width="156" height="170" rx="10" fill="#fdecea" stroke="#f0c3bd"/>
+          <text x="790" y="146" text-anchor="middle" font-size="11.4" font-weight="600" fill="#b8382c">不要写这些</text>
+          <text x="790" y="172" text-anchor="middle" font-size="10.2" fill="#b8382c">树状渲染</text>
+          <text x="790" y="192" text-anchor="middle" font-size="10.2" fill="#b8382c">全文检索</text>
+          <text x="790" y="212" text-anchor="middle" font-size="10.2" fill="#b8382c">两次调用 diff</text>
+          <text x="790" y="232" text-anchor="middle" font-size="10.2" fill="#b8382c">分享链接与权限</text>
+          <text x="790" y="252" text-anchor="middle" font-size="10.2" fill="#b8382c">自建时序库</text>
+          <text x="790" y="276" text-anchor="middle" font-size="10" fill="#c08a3e">全是「做过一遍才知道多贵」</text>
+        </svg>
+        </div>
+        <figcaption>右边那列是拒绝清单。<b>自研的边界应当画在「聚合」上，不要越过到「渲染」</b>——聚合是你独有的需求，渲染是全行业共同的问题。</figcaption>
+      </figure>
+
+      <h3>落到项目里：一张终端报表</h3>
+      <p>按上面的判断，这个项目里唯一自己写的可视化是一张命令行报表：拉最近一段时间的追踪，压成三张表——总量与钱、按天趋势、最贵的几条。</p>
+      <div class="codeblock"><pre>make trace-report                 <span class="cm"># 最近 24 小时</span>
+make trace-report HOURS=168       <span class="cm"># 最近 7 天</span>
+
+<span class="cm">输出（节选）：</span>
+① 概览    trace 数 128 ｜ 会话 31 ｜ 总成本 $0.4218 ｜ P50 2.1s ｜ P95 6.8s
+② 按天    11-05  42 条  $0.1320  P95 5.9s
+③ 最贵    11-07 14:22  s-8f3a  8.4s  $0.0182  「我这种情况能不能报销」</pre></div>
+      <p>它只做三件事：拉数据、聚合、打印。没有数据库、没有前端、没有缓存。要加一个「按工具统计错误率」，仍然是加三十行代码——这就是「薄壳」的意思。</p>
+      <div class="note bad"><b>最常见的浪费：</b>先自研一个追踪列表页，做到第三周才发现还缺搜索、还缺按会话聚合、还缺分享给同事看，最后要么推倒，要么把现成的又抄一遍。</div>
+      <div class="takeaway">自研的边界画在聚合上，不要越到渲染上；追踪树用现成的，周报用命令行，两者中间隔着一整套产品的工作量。</div>
+    </section>
+
+    <section id="c6">
+      <h2><span class="num">6</span>把追踪接进评测：让「变好了」可以证伪<span class="pill p1">P1</span></h2>
+      <p>追踪解决「这一次为什么错」，评测解决「这一版是不是真的比上一版好」。前者是点，后者是面，缺一个都只能靠感觉。</p>
+      <p>把两者接起来的机制只有一句话：<b>分数必须回写到产生它的那条追踪上</b>。回写到别处（表格、文档、聊天记录），“改完感觉好了”就永远无法证伪。</p>
+
+      <figure class="fig">
+        <div class="fig-h"><i>图 5</i>线上追踪 → 打分 → 题集 → 回归，一个闭环</div>
+        <div class="fig-scroll">
+        <svg viewBox="0 0 900 268" role="img" aria-label="闭环：线上追踪被抽样打分，低分样本进题集，每次改动重跑题集，结果回到发布决策">
+          <defs><marker id="b65" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#9db4d0"/></marker></defs>
+
+          <rect x="36" y="86" width="168" height="76" rx="10" fill="#eaf0ff" stroke="#b9cff7"/>
+          <text x="120" y="112" text-anchor="middle" font-size="11.6" font-weight="600" fill="#1d4ed8">线上追踪</text>
+          <text x="120" y="132" text-anchor="middle" font-size="10.4" fill="#3b5b8f">真实请求，带输入输出</text>
+          <text x="120" y="150" text-anchor="middle" font-size="10.4" fill="#3b5b8f">每天自动累积</text>
+
+          <line x1="204" y1="124" x2="252" y2="124" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b65)"/>
+
+          <rect x="256" y="86" width="152" height="76" rx="10" fill="#f3f0fb" stroke="#cfc4ee"/>
+          <text x="332" y="112" text-anchor="middle" font-size="11.6" font-weight="600" fill="#5b46a8">打分</text>
+          <text x="332" y="132" text-anchor="middle" font-size="10.4" fill="#7b7392">规则 / 模型 / 人工</text>
+          <text x="332" y="150" text-anchor="middle" font-size="10.4" fill="#7b7392">结果写回同一条追踪</text>
+
+          <line x1="408" y1="124" x2="456" y2="124" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b65)"/>
+
+          <rect x="460" y="86" width="160" height="76" rx="10" fill="#fff6e6" stroke="#f0d19a"/>
+          <text x="540" y="112" text-anchor="middle" font-size="11.6" font-weight="600" fill="#9a6200">低分样本入题集</text>
+          <text x="540" y="132" text-anchor="middle" font-size="10.4" fill="#9a6200">从「线上碰到的」</text>
+          <text x="540" y="150" text-anchor="middle" font-size="10.4" fill="#9a6200">变成「固定要跑的」</text>
+
+          <line x1="620" y1="124" x2="668" y2="124" stroke="#9db4d0" stroke-width="1.5" marker-end="url(#b65)"/>
+
+          <rect x="672" y="86" width="150" height="76" rx="10" fill="#e8f6ef" stroke="#a9d8c3"/>
+          <text x="747" y="112" text-anchor="middle" font-size="11.6" font-weight="600" fill="#0f7a52">改动后重跑</text>
+          <text x="747" y="132" text-anchor="middle" font-size="10.4" fill="#0f7a52">比的是分数，不是感觉</text>
+          <text x="747" y="150" text-anchor="middle" font-size="10.4" fill="#0f7a52">掉分就不发</text>
+
+          <path d="M747 162 L747 206 L120 206 L120 162" fill="none" stroke="#c3cddd" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#b65)"/>
+          <text x="432" y="226" text-anchor="middle" font-size="10.6" fill="#8b9aab">新版本上线后继续产生追踪，闭环转起来</text>
+
+          <rect x="36" y="24" width="786" height="42" rx="9" fill="#f8fafc" stroke="#eef1f6"/>
+          <text x="54" y="50" font-size="11.2" fill="#5b6b7f">关键在第二步：分数落在追踪上，才能按「分数最低」「某个工具出错」这类条件筛查 —— 落在表格里就只能靠人翻。</text>
+        </svg>
+        </div>
+        <figcaption>题集的来源决定它有没有价值。<b>自己坐那儿想 20 道题，永远想不出用户真实问的那 200 种怪问法</b>；而线上追踪每天免费送给你。</figcaption>
+      </figure>
+
+      <p>项目里已经有一套跑通的实现：拉最近 24 小时里<b>还没被打分</b>的追踪，按指标逐条打分，再把分数写回原追踪。</p>
+      <div class="codeblock"><pre><span class="cm"># evals/evaluator.py —— 拉未打分的追踪，逐条评分后回写</span>
+traces = langfuse.api.trace.list(
+    from_timestamp=datetime.now() - timedelta(hours=24),
+    order_by="timestamp.asc", limit=100,
+).data
+pending = [t for t in traces if not t.scores]     <span class="cm"># 打过分的跳过，省评测额度</span>
+
+langfuse.create_score(
+    trace_id=trace.id, name=metric["name"],
+    data_type="NUMERIC", value=score.score, comment=score.reasoning,
+)</pre></div>
+      <p>两个细节值得抄：<b>先过滤掉已有分数的</b>，否则每次重跑都在同一个样本上烧钱；<b>把理由写进 comment</b>，否则三个月后你只知道它 0.2 分，不知道为什么。</p>
+      <div class="note ok"><b>最低配的起步方式：</b>先只做一个指标（比如「回答是否基于检索内容」），二十分题，二十条基线。这个规模的题集就能挡住大多数「改完感觉变好了」的自我欺骗。</div>
+      <div class="takeaway">分数必须回写到产生它的那条追踪上；题集从线上低分样本里长出来，别坐在屋里想。</div>
+    </section>
+
+    <section id="c7">
+      <h2><span class="num">7</span>五步验收与排错表<span class="pill p0">P0</span></h2>
+      <div class="checkpoint">
+        <span class="cp-tag">动手练习</span>
+        <h4>按顺序做完这五步，做完就能排查了</h4>
+        <ul>
+          <li><b>① 配 key</b>：云端建项目拿 pk-/sk-，或本地起一套；写进环境文件，跑 <code>make trace-smoke</code>，能打出直链才算通。</li>
+          <li><b>② 发一次真实对话</b>：界面上出现一条 <code>chat</code>，点开节点不少于三个（记忆检索、模型调用、可能的工具调用）。</li>
+          <li><b>③ 看会话页</b>：能按会话把它们串起来。串不起来，就是归因键没写对。</li>
+          <li><b>④ 看成本</b>：不是 0。是 0 就说明模型调用没被记成 generation。</li>
+          <li><b>⑤ 故意制造一次错误</b>：随便让某个工具抛个异常，确认能在界面上按 ERROR 筛出这一条，并看到异常文本。</li>
+        </ul>
+        <p class="hint">做完再加一步：把某条答错的追踪挑出来，给它打一个分数，然后去题集里找它。走完这一圈，闭环就通了。</p>
+      </div>
+
+      <h3>症状对照表</h3>
+      <p>下面这张表覆盖了接入阶段九成的「明明配了却没有数据」：</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:230px">症状</th><th style="width:250px">大概率原因</th><th>怎么确认</th></tr>
+          <tr><td class="k">一条数据都没有</td><td>开关没开，或 key 与地址不匹配</td><td>跑自检命令，看鉴权是否通过</td></tr>
+          <tr><td class="k">服务里有、脚本里没有</td><td>脚本退出前没上报</td><td>在脚本末尾加一次强制上报</td></tr>
+          <tr><td class="k">有追踪，会话页是空的</td><td>会话键没带前缀</td><td>点开一条追踪看 session 字段</td></tr>
+          <tr><td class="k">有追踪，成本全是 0</td><td>模型调用记成了普通 span</td><td>看节点类型是不是 generation</td></tr>
+          <tr><td class="k">成本字段空、其它正常</td><td>SDK 与服务端大版本不一致</td><td>核对两边版本号</td></tr>
+          <tr><td class="k">中文用户筛不出来</td><td>昵称当成了用户 ID，被丢弃</td><td>改传主键，昵称放元数据</td></tr>
+          <tr><td class="k">节点只有一个根</td><td>回调没挂上图，或图里没走模型</td><td>看根节点下有没有子节点</td></tr>
+        </table>
+      </div>
+      <div class="note"><b>排错顺序很重要：</b>先证明「上报链路通」，再证明「上下文挂对了」，最后才怀疑业务代码。反着来，你会同时怀疑三件事，然后一件都定位不了。</div>
+      <div class="takeaway">先跑自检证明链路通，再查归因键，最后才看业务代码；顺序反了，三件事一起怀疑，一件都查不出来。</div>
+    </section>
+
+    <div class="pager">
+      <a href="05_技术选型与ADR.html"><em>上一篇</em><b>← 技术选型：把八层逐层拍板</b></a>
+      <a class="next" href="01_生产级智能体全景图.html"><em>回到开头</em><b>生产级智能体全景图 ↑</b></a>
+    </div>
+
+  </main>
+</div>
+
+<button class="totop" id="totop" aria-label="回到顶部">↑</button>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.topnav a'));
+  var nav = document.getElementById('topnav');
+  var sections = Array.prototype.slice.call(document.querySelectorAll('section[id]'));
+  var current = null;
+
+  function reveal(link){
+    if (!link || !nav || nav.scrollWidth <= nav.clientWidth + 2) return;
+    var nr = nav.getBoundingClientRect(), ar = link.getBoundingClientRect();
+    if (ar.left < nr.left + 4) nav.scrollLeft += ar.left - nr.left - 10;
+    else if (ar.right > nr.right - 4) nav.scrollLeft += ar.right - nr.right + 10;
+  }
+
+  var strip = document.querySelector('.navstrip');
+
+  function edges(){
+    if (!nav || !strip) return;
+    var over = nav.scrollWidth > nav.clientWidth + 2;
+    strip.classList.toggle('fade-l', over && nav.scrollLeft > 4);
+    strip.classList.toggle('fade-r', over && nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 4);
+  }
+
+  function activate(){
+    var pos = window.scrollY + 122, cur = sections[0] ? sections[0].id : '';
+    sections.forEach(function(s){ if (s.offsetTop <= pos) cur = s.id; });
+    if (cur !== current) {
+      current = cur;
+      links.forEach(function(a){
+        var on = a.getAttribute('href') === '#' + cur;
+        a.classList.toggle('on', on);
+        if (on) reveal(a);
+      });
+    }
+    document.getElementById('totop').classList.toggle('show', window.scrollY > 600);
+  }
+
+  window.addEventListener('scroll', activate, {passive:true});
+  window.addEventListener('resize', activate);
+  nav.addEventListener('scroll', edges, {passive:true});
+  activate();
+  edges();
+
+  document.getElementById('totop').addEventListener('click', function(){
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+})();
+</script>
+
+</body>
+</html>

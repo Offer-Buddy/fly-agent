@@ -1,7 +1,6 @@
-"""API v1 router configuration.
+"""API v1 路由汇总。
 
-This module sets up the main API router and includes all sub-routers for different
-endpoints like authentication and chatbot functionality.
+把各业务模块的子路由挂到统一前缀下，新增模块时在这里注册一次即可。
 """
 
 from fastapi import APIRouter
@@ -12,17 +11,17 @@ from app.core.logging import logger
 
 api_router = APIRouter()
 
-# Include routers
+# 注册子路由（tags 决定 OpenAPI 文档里的分组）
 api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 api_router.include_router(chatbot_router, prefix="/chatbot", tags=["Chatbot"])
 
 
 @api_router.get("/health")
 async def health_check():
-    """Health check endpoint.
+    """健康检查接口，供负载均衡与探活使用。
 
     Returns:
-        dict: Health status information.
+        dict: 健康状态与服务版本
     """
     logger.info("health_check_called")
     return {"status": "healthy", "version": "1.0.0"}

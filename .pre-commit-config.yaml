@@ -1,21 +1,50 @@
+# =============================================================================
+# pre-commit 钩子配置
+# =============================================================================
+# 安装（每个克隆仓库只需一次）：uv run pre-commit install
+# 全量手动跑：make pre-commit（等价于 uv run pre-commit run --all-files）
+# 升级钩子版本：make pre-commit-update（会改写下面的 rev）
+#
+# 执行顺序就是本文件的书写顺序；任何一个钩子失败，本次提交即被阻断。
+# 想临时跳过用 git commit --no-verify，但除非排查问题，不建议长期这么干。
+# =============================================================================
+
 repos:
-  # General file hygiene
+  # ---------------------------------------------------------------------------
+  # 通用文件卫生
+  # ---------------------------------------------------------------------------
+  # 处理的是「文件本身」而非代码语义：多余空白、缺尾换行、非法 YAML/JSON、
+  # 大文件、冲突标记等。这类问题一旦进仓库，后面每个 diff 都会带着噪音。
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # 去掉行尾多余空格
       - id: trailing-whitespace
+      # 保证每个文件以单个换行结尾（POSIX 文本文件约定）
       - id: end-of-file-fixer
+      # 校验 YAML 语法：本文件、docker-compose、CI 配置都靠它兜底
       - id: check-yaml
+      # 校验 JSON 语法；.vscode 下允许带注释的 jsonc，故排除
       - id: check-json
         exclude: ^\.vscode/
+      # 校验 TOML 语法（pyproject.toml）
       - id: check-toml
+      # 拒绝带 <<<<<<< / >>>>>>> 冲突标记的文件被提交
       - id: check-merge-conflict
+      # 拒绝提交超过 500KB 的文件：大文件进了 git 历史就再也删不掉了
       - id: check-added-large-files
         args: ["--maxkb=500"]
+      # 禁止直接往 master 提交，强制走分支 + PR
       - id: no-commit-to-branch
         args: ["--branch", "master"]
 
-  # Secrets detection
+  # ---------------------------------------------------------------------------
+  # 密钥扫描
+  # ---------------------------------------------------------------------------
+  # detect-secrets 用正则 + 熵值判断疑似密钥（API Key、私钥、连接串等）。
+  # --baseline 指定已知误报的基线文件：里面的条目已被人工确认为「不是密钥」，
+  # 后续只有新增命中才会报错，避免历史噪音把真问题盖掉。
+  # .env.example 全是占位符（sk-xxx 之类），整体排除以免刷屏。
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
@@ -23,15 +52,32 @@ repos:
         args: ["--baseline", ".secrets.baseline"]
         exclude: \.env\.example$
 
-  # Ruff: linting + formatting (replaces black, isort, flake8)
+  # ---------------------------------------------------------------------------
+  # ruff：静态检查 + 格式化
+  # ---------------------------------------------------------------------------
+  # 这一组同时替代 black / isort / flake8 —— 规则配置统一写在 pyproject.toml
+  # 的 [tool.ruff] 下，这里只负责「什么时候跑」。
+  # rev 要与 pyproject 里的 ruff 版本大致对齐，避免规则集不同导致
+  # 「本地过了、CI 不过」。
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.4
     hooks:
+      # 先自动修能修的（导入排序、未使用导入等），再报剩下的
       - id: ruff
         args: ["--fix"]
+      # 再统一格式化（等价 ruff format，替代 black）
       - id: ruff-format
 
-  # Pyright: static type checker (runs in project venv via uv)
+  # ---------------------------------------------------------------------------
+  # pyright：静态类型检查
+  # ---------------------------------------------------------------------------
+  # 用 local 钩子而不是官方仓库：pyright 需要读项目自己的 .venv 才能解析
+  # 第三方包的类型，官方钩子会另建隔离环境，容易出现「找不到模块」的假报错。
+  #   language: system       直接调用本机命令（这里是 uv run pyright）
+  #   types: [python]        只在暂存区有 .py 变更时才触发
+  #   pass_filenames: false  让 pyright 按 pyproject 的 include 全量检查，
+  #                          而不是只查改动文件（类型错误常常跨文件传播）
+  #   require_serial: true   串行执行，避免多个 pyright 实例抢内存
   - repo: local
     hooks:
       - id: pyright

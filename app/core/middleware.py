@@ -1,4 +1,8 @@
-"""Custom middleware for tracking metrics and other cross-cutting concerns."""
+"""自定义中间件：请求指标、日志上下文、按需性能剖析。
+
+三个中间件的注册顺序在 ``app/main.py`` 里，顺序会影响指标与上下文能否
+覆盖到异常路径，改动前先看清楚。
+"""
 
 import json
 import time
@@ -29,6 +33,7 @@ from app.core.metrics import (
     http_requests_total,
 )
 
+# pyinstrument 是开发依赖，生产镜像可能没装；保留探测以便优雅降级
 if TYPE_CHECKING:
     from pyinstrument import Profiler  # pyright: ignore[reportMissingImports]
     from pyinstrument.renderers import JSONRenderer  # pyright: ignore[reportMissingImports]
@@ -47,20 +52,21 @@ else:
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
-    """Middleware for tracking HTTP request metrics."""
+    """采集每个 HTTP 请求的计数与耗时指标。"""
 
     @override
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Track metrics for each request.
+        """统计单个请求的指标。
 
         Args:
-            request: The incoming request
-            call_next: The next middleware or route handler
+            request: 进来的请求
+            call_next: 下一个中间件或路由处理函数
 
         Returns:
-            Response: The response from the application
+            Response: 应用返回的响应
         """
         start_time = time.time()
+        # 先预设 500：如果 call_next 抛异常，指标里仍能记下这次失败
         status_code = 500
 
         try:
@@ -71,7 +77,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         finally:
             duration = time.time() - start_time
 
-            # Record metrics
+            # 记录请求数与耗时
             http_requests_total.labels(method=request.method, endpoint=request.url.path, status=status_code).inc()
 
             http_request_duration_seconds.labels(method=request.method, endpoint=request.url.path).observe(duration)
@@ -80,75 +86,73 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
 
 class LoggingContextMiddleware(BaseHTTPMiddleware):
-    """Middleware for adding user_id and session_id to logging context."""
+    """把 user_id / session_id 注入日志上下文。"""
 
     @override
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Extract user_id and session_id from authenticated requests and add to logging context.
+        """从已鉴权请求中提取 session_id 并绑定到日志上下文。
 
         Args:
-            request: The incoming request
-            call_next: The next middleware or route handler
+            request: 进来的请求
+            call_next: 下一个中间件或路由处理函数
 
         Returns:
-            Response: The response from the application
+            Response: 应用返回的响应
         """
         try:
-            # Clear any existing context from previous requests
+            # 清掉上一个请求可能残留的上下文
             clear_context()
 
-            # Extract token from Authorization header
+            # 从 Authorization 头取 token
             auth_header = request.headers.get("authorization")
             if auth_header and auth_header.startswith("Bearer "):
                 token = auth_header.split(" ")[1]
 
                 try:
-                    # Decode token to get session_id (stored in "sub" claim)
+                    # 解码 token 拿 session_id（放在 "sub" 声明里）
                     payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
                     session_id = payload.get("sub")
 
                     if session_id:
-                        # Bind session_id to logging context
+                        # 绑定 session_id，后续日志自动带上
                         bind_context(session_id=session_id)
 
-                        # Try to get user_id from request state after authentication
-                        # This will be set by the dependency injection if the endpoint uses authentication
-                        # We'll check after the request is processed
+                        # user_id 由鉴权依赖写入 request.state，
+                        # 这里拿不到，等请求处理完再取
 
                 except JWTError:
-                    # Token is invalid, but don't fail the request - let the auth dependency handle it
+                    # token 无效也不在这里拦，交给鉴权依赖去返回 401
                     pass
 
-            # Process the request
+            # 放行请求
             response = await call_next(request)
 
-            # After request processing, check if user info was added to request state
+            # 请求处理完后再补 user_id（鉴权依赖此时已写入 request.state）
             if hasattr(request.state, "user_id"):
                 bind_context(user_id=request.state.user_id)
 
             return response
 
         finally:
-            # Always clear context after request is complete to avoid leaking to other requests
+            # 无论成功失败都要清空，避免上下文泄漏到下一个请求
             clear_context()
 
 
 class ProfilingMiddleware(BaseHTTPMiddleware):
-    """Automatic per-request profiling middleware using pyinstrument.
+    """基于 pyinstrument 的逐请求性能剖析中间件。
 
-    Only active when DEBUG=true. Profiles every request and saves an HTML
-    flamegraph to PROFILING_DIR when the request exceeds
-    PROFILING_THRESHOLD_SECONDS. Files are named {request_id}.html so they
-    can be correlated with logs. /tmp is cleaned up automatically by the OS.
+    仅在 ``DEBUG=true`` 时挂载。每个请求都会被采样，当耗时超过
+    ``PROFILING_THRESHOLD_SECONDS`` 时把 JSON 报告写入 ``PROFILING_DIR``。
+    文件名用 request_id，方便与日志对照；``/tmp`` 下的历史文件由操作系统回收。
     """
 
     @override
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Profile every request; save enriched JSON if duration exceeds threshold."""
+        """剖析单个请求，超阈值时落盘报告。"""
         if not PYINSTRUMENT_AVAILABLE:
             return await call_next(request)
 
-        # Start all three profilers
+        # 同时开三种采样：内存分配追踪 + CPU 时间 + 调用树
         tracemalloc.start()
         cpu_start = time.process_time()
 
@@ -156,7 +160,7 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
         with profiler:
             response = await call_next(request)
 
-        # Capture metrics immediately after the request
+        # 请求一结束立刻取数，避免被后续逻辑干扰
         cpu_ms = round((time.process_time() - cpu_start) * 1000, 2)
         mem_current_kb, mem_peak_kb = (v // 1024 for v in tracemalloc.get_traced_memory())
         snapshot = tracemalloc.take_snapshot()
@@ -166,13 +170,14 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
 
         if wall_ms / 1000 >= settings.PROFILING_THRESHOLD_SECONDS:
             raw_id = correlation_id.get() or "unknown"
+            # 把 32 位无连字符的 id 补成标准 UUID 形式，便于肉眼识别
             if len(raw_id) == 32 and "-" not in raw_id:
                 raw_id = f"{raw_id[:8]}-{raw_id[8:12]}-{raw_id[12:16]}-{raw_id[16:20]}-{raw_id[20:]}"
 
             settings.PROFILING_DIR.mkdir(parents=True, exist_ok=True)
             filepath = settings.PROFILING_DIR / f"{raw_id}.json"
 
-            # Top 20 memory allocators — exclude profiler and stdlib noise
+            # 内存占用 Top 20，排除剖析器自身与标准库噪声
             _excluded = ("tracemalloc", "pyinstrument", "<frozen", "logging/__init__")
             top_allocs = [
                 {

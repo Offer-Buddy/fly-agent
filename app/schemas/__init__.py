@@ -1,4 +1,7 @@
-"""This file contains the schemas for the application."""
+"""对外暴露的 pydantic 模型出口。
+
+新增模型后记得加进 ``__all__``，否则 ``from app.schemas import X`` 拿不到。
+"""
 
 from app.schemas.auth import Token
 from app.schemas.base import BaseResponse

@@ -1,97 +1,158 @@
+# =============================================================================
+# 项目定义与工具链配置
+# =============================================================================
+# 依赖管理用 uv（不是 pip）：
+#   uv sync              按 uv.lock 装齐所有依赖（含 dev 组）
+#   uv add xxx           新增运行时依赖并自动写回本文件与 uv.lock
+#   uv add --group dev x 新增开发期依赖
+#   uv lock --upgrade    在允许的版本范围内升级并重算锁文件
+#
+# 注意：改完依赖必须把 uv.lock 一起提交，否则 CI 与 Docker 构建
+# （都带 --frozen）会因为锁文件与清单不一致而失败。
+# =============================================================================
+
 [project]
-name = "langgraph-fastapi-template"
+name = "fly-agent"
 version = "0.1.0"
-description = "LangGraph FastAPI Template"
+# 会被 app/core/config.py 读作 settings.DESCRIPTION（OpenAPI 文档描述），
+# 同时是包元数据，所以写成一句完整的话而不是项目代号。
+# 改这里必须同步 app/core/config.py 的 PACKAGE_NAME，否则读不到包元数据。
+description = "基于 FastAPI + LangGraph 的 AI 智能体应用脚手架"
+# README 会被打到包元数据里；同时它也是面向使用者的第一份文档
 readme = "README.md"
+# 下限锁在 3.13：代码里用了 PEP 695 泛型语法与新版 typing 特性
 requires-python = ">=3.13"
+
+# -----------------------------------------------------------------------------
+# 运行时依赖
+# -----------------------------------------------------------------------------
+# 版本约束统一用 `>=`（不锁死小版本），真正「锁死」交给 uv.lock 完成——
+# 这样既能在锁文件里保证可复现，又不会让清单变成一堵升级墙。
+# 唯一的例外是 langfuse：它有明确的行为变更历史，这里钉死到 3.9.1。
 dependencies = [
+    # Web 层
     "fastapi>=0.121.0",
+    "uvicorn>=0.34.0",
+    "python-multipart>=0.0.20",         # 表单/文件上传解析
+    # 图编排与 LLM 调用
+    "langgraph>=1.0.2",
+    "langgraph-checkpoint-postgres>=3.0.1",  # 会话状态持久化到 PostgreSQL
     "langchain>=1.0.5",
     "langchain-core>=1.0.4",
-    "langchain-openai>=1.0.2",
+    "langchain-openai>=1.0.2",          # OpenAI 兼容协议，也用于 DashScope 等国产模型
+    "langchain-community>=0.4.1",
+    # 可观测性：链路追踪
     "langfuse==3.9.1",
-    "langgraph>=1.0.2",
-    "langgraph-checkpoint-postgres>=3.0.1",
+    # 配置与校验
+    "pydantic[email]>=2.11.1",          # 带 email 类型校验
+    "pydantic-settings>=2.8.1",         # 环境变量 → Settings 模型的解析层
+    "email-validator>=2.2.0",          # pydantic 的 EmailStr 依赖它才能用
+    "python-dotenv>=1.1.0",             # 让第三方库也能读到 .env
+    # 认证与加密
+    "python-jose[cryptography]>=3.4.0", # JWT 签发与校验
     "passlib[bcrypt]>=1.7.4",
-    "psycopg[binary]>=3.3.2",
-    "psycopg2-binary>=2.9.10",
-    "pydantic[email]>=2.11.1",
-    "pydantic-settings>=2.8.1",
-    "python-dotenv>=1.1.0",
-    "python-jose[cryptography]>=3.4.0",
-    "python-multipart>=0.0.20",
-    "sqlmodel>=0.0.25",
-    "structlog>=25.2.0",
-    "supabase>=2.15.0",
-    "uvicorn>=0.34.0",
     "bcrypt>=4.3.0",
+    # 数据库
+    "sqlmodel>=0.0.25",                 # ORM（SQLAlchemy + Pydantic 的薄封装）
+    "psycopg[binary]>=3.3.2",           # 异步驱动，LangGraph checkpointer 用
+    "psycopg2-binary>=2.9.10",          # 同步驱动，Alembic 迁移用
+    "alembic>=1.18.4",
+    "supabase>=2.15.0",                 # 可选：托管 Postgres 方案
+    # 缓存与限流
+    "redis>=7.4.0",
     "slowapi>=0.1.9",
-    "email-validator>=2.2.0",
+    # 日志与监控
+    "structlog>=25.2.0",
+    "asgi-correlation-id>=4.3.4",       # 每个请求注入 correlation id，串联全链路日志
     "prometheus-client>=0.19.0",
     "starlette-prometheus>=0.7.0",
-    "asgiref>=3.8.1",
+    # 长期记忆
+    "mem0ai>=1.0.0",
+    # 内置工具：联网搜索
     "duckduckgo-search>=3.9.0",
-    "langchain-community>=0.4.1",
+    "ddgs>=9.6.0",
+    # 杂项
     "tqdm>=4.67.1",
     "colorama>=0.4.6",
-    "ddgs>=9.6.0",
-    "tenacity>=9.1.2",
-    "mem0ai>=1.0.0",
+    "tenacity>=9.1.2",                  # 重试策略
+    "asgiref>=3.8.1",                   # 同步/异步互调适配
+    # 事件循环加速：Windows 没有 uvloop 轮子，按平台条件排除
     "uvloop>=0.22.1; platform_system != 'Windows'",
-    "asgi-correlation-id>=4.3.4",
-    "alembic>=1.18.4",
+    "rich>=15.0.0",
 ]
 
+# -----------------------------------------------------------------------------
+# 可选依赖组（extra）
+# -----------------------------------------------------------------------------
+# 装法：uv sync --extra anthropic（可叠加多个 --extra）
+# 用途：这些是「按需接入的 LLM 供应商 SDK」。核心链路只依赖
+# langchain-openai（走 OpenAI 兼容协议），接 Claude / Ollama / Gemini 时
+# 再装对应 extra，避免所有人都被迫下载用不到的 SDK。
 [project.optional-dependencies]
 dev = [
-    "black",
+    "black",                            # 与 ruff format 并存，兼容老配置
     "isort",
     "flake8",
     "ruff",
-    "djlint==1.36.4",
-    "pyinstrument>=5.1.2",
-]
-cache = [
-    "redis>=7.4.0",
-    "valkey[libvalkey]>=6.1.0",
+    "djlint==1.36.4",                   # HTML 模板格式化
+    "pyinstrument>=5.1.2",              # 性能剖析（对应 PROFILING_ENABLED）
 ]
 anthropic = [
     "langchain-anthropic>=1.7.2",
 ]
 ollama = [
-    "langchain-ollama>=1.1.0",
+    "langchain-ollama>=1.1.0",          # 本地部署模型
 ]
 google-genai = [
     "langchain-google-genai>=4.3.7",
 ]
 
+# -----------------------------------------------------------------------------
+# 依赖组（PEP 735）
+# -----------------------------------------------------------------------------
+# 与上面的 optional-dependencies 区别：
+#   optional-dependencies → 会写进发布包的元数据，是给「使用者」的
+#   dependency-groups    → 只在开发仓库里生效，不随包发布，是给「贡献者」的
+# uv sync 默认会装上 dev 组；只想要运行时依赖用 uv sync --no-dev
 [dependency-groups]
 dev = [
-    "detect-secrets>=1.5.0",
+    "detect-secrets>=1.5.0",            # 提交前扫描密钥，配合 .secrets.baseline
     "pre-commit>=4.5.1",
     "pyright>=1.1.390",
     "ruff>=0.11.4",
 ]
 test = ["httpx>=0.28.1", "pytest>=8.3.5"]
 
-
+# -----------------------------------------------------------------------------
+# pytest
+# -----------------------------------------------------------------------------
 [tool.pytest.ini_options]
+# 带 slow 标记的用例默认也会跑；跳过用：pytest -m "not slow"
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 python_files = ["test_*.py", "*_test.py", "tests.py"]
 
+# -----------------------------------------------------------------------------
+# black（保留但已被 ruff format 取代，两者配置需保持一致的行宽）
+# -----------------------------------------------------------------------------
 [tool.black]
 line-length = 119
 exclude = "venv|migrations"
 
+# -----------------------------------------------------------------------------
+# flake8（保留但已被 ruff 取代）
+# -----------------------------------------------------------------------------
 [tool.flake8]
 docstring-convention = "all"
 ignore = ["D107", "D212", "E501", "W503", "W605", "D203", "D100"]
 exclude = "venv|migrations"
 max-line-length = 119
 
-# radon
+# radon 圈复杂度阈值：超过 10 说明函数该拆了
 radon-max-cc = 10
 
+# -----------------------------------------------------------------------------
+# isort（保留但已被 ruff 取代）
+# -----------------------------------------------------------------------------
 [tool.isort]
 profile = "black"
 multi_line_output = "VERTICAL_HANGING_INDENT"
@@ -99,6 +160,9 @@ force_grid_wrap = 2
 line_length = 119
 skip = ["migrations", "venv"]
 
+# -----------------------------------------------------------------------------
+# pylint（保留但已被 ruff 取代）
+# -----------------------------------------------------------------------------
 [tool.pylint."messages control"]
 disable = [
     "line-too-long",
@@ -113,26 +177,52 @@ disable = [
 [tool.pylint.master]
 ignore = "migrations"
 
+# -----------------------------------------------------------------------------
+# ruff —— 实际生效的 lint / format 工具
+# -----------------------------------------------------------------------------
 [tool.ruff]
+# 119 字符：中文注释在此行宽下比 88 更少出现硬折行
 line-length = 119
-exclude = ["migrations", "*.ipynb", "venv"]
+# exclude 的含义是「这些路径不属于本脚手架的工程闸门」：
+#   migrations  老目录名（现用 alembic/），保留以防历史分支带进来
+#   poc         PoC / 框架对比脚本，验证完就冻结，不参与 lint 与格式化
+#   lint_course_html.py  课程稿校验工具，属于内容生产链，不属于 app 工程链
+#   注：.venv*、logs/、.workbuddy/ 等已在 .gitignore 里，ruff 默认尊重 gitignore
+exclude = ["migrations", "poc", "scripts/lint_course_html.py", "*.ipynb", "venv"]
 
 [tool.ruff.lint]
-# Enable flake8-bugbear (`B`) rules and docstring (`D`) rules
+# E = pycodestyle 错误，F = pyflakes 未使用变量/导入，
+# B = flake8-bugbear 常见坑（可变默认值、except 裸抛等），
+# ERA = 注释掉的死代码，D = pydocstyle 文档字符串规范
 select = ["E", "F", "B", "ERA", "D"]
-# Never enforce `E501` (line length violations).
-ignore = ["E501", "D203", "D213", "B904", "B008"]
-# Avoid trying to fix flake8-bugbear (`B`) violations.
+
+# 各类忽略的原因：
+#   E501  行宽由 formatter 保证，不做逐条报错
+#   D203  与 D211 互斥（空行在类 docstring 前 or 后），二选一即可
+#   D213  与 D212 互斥（多行 docstring 摘要是否另起一行），二选一即可
+#   B904  except 块里 raise 需带 from，本项目多处刻意不加
+#   B008  函数默认值里调用函数（FastAPI 的 Depends() 必须这么写）
+#   D415  「docstring 首行须以英文句号/问号/叹号结尾」，中文文档用全角「。」，
+#         pydocstyle 不认，故忽略；其余中文文档规范仍照常检查。
+ignore = ["E501", "D203", "D213", "B904", "B008", "D415"]
+
+# bugbear 的问题多半需要人判断，不让 ruff 自动「修」
 unfixable = ["B"]
 
 [tool.ruff.lint.pydocstyle]
+# Google 风格：Args / Returns / Raises 分节
 convention = "google"
 
-# Ignore `E402` (import violations) in all `__init__.py` files
+# `__init__.py` 里的 import 常用来重导出，会触发 E402（导入不在文件顶部），
+# 这里整体放行
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402"]
 
+# -----------------------------------------------------------------------------
+# pyright —— 静态类型检查
+# -----------------------------------------------------------------------------
 [tool.pyright]
+# 只检查业务代码；alembic/versions 是自动生成的迁移脚本，不值得逐行较真
 include = ["app", "evals"]
 exclude = [
     "**/__pycache__",
@@ -143,12 +233,14 @@ exclude = [
 ]
 stubPath = "typings"
 pythonVersion = "3.13"
+# standard 比 strict 宽松：不要求每个函数都标返回类型，但会查真实的类型错
 typeCheckingMode = "standard"
 
-# Tightened from defaults — cheap real-bug catchers
+# 以下三条比默认更严——都是「便宜的真 bug 探测器」，几乎不会误报：
+#   重复 import 同一模块、TypeVar 用法错误、self/cls 参数名写错
 reportDuplicateImport = "error"
 reportInvalidTypeVarUse = "error"
 reportSelfClsParameterName = "error"
 
-# Style nudges
+# 重写父类方法时提示加 @override，纯风格建议，故用 warning
 reportImplicitOverride = "warning"

@@ -1,139 +1,50 @@
-# FastAPI LangGraph Agent Template
+# Fly Agent
 
-A production-ready template for building AI agent backends with FastAPI and LangGraph. Handles the hard parts — stateful conversations, long-term memory, tool calling, observability, rate limiting, auth — so you can focus on your agent logic.
+基于 FastAPI + LangGraph 的 AI 智能体应用脚手架。有状态对话、长期记忆、工具调用、可观测性、限流与认证这些生产级难点已经接好，新增业务只需要往 `app/` 里长。
 
-**Built for AI engineers** who want a solid foundation, not a tutorial project.
-
----
-
-## Powered by Atlas Cloud — Drop-in LLM Backend for LangGraph Agents
-
-<div align="center">
-  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=fastapi-langgraph-agent-production-ready-template">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/atlas-cloud-logo-dark.png"/>
-      <img src="docs/atlas-cloud-logo.png" alt="Atlas Cloud" width="200"/>
-    </picture>
-  </a>
-</div>
-
-[**Atlas Cloud**](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=fastapi-langgraph-agent-production-ready-template) provides an **OpenAI-compatible LLM API** that integrates seamlessly into this FastAPI + LangGraph template — no code changes to your agent graph needed. Just swap `OPENAI_BASE_URL` and `OPENAI_API_KEY` to access **DeepSeek, Qwen, GLM, Kimi, MiniMax, Gemini, Claude, GPT** and more through a single unified endpoint.
-
-The `LLMRegistry` in this template uses `langchain_openai.ChatOpenAI` — Atlas Cloud is wire-compatible, so you get instant access to 130+ curated models without touching any LangGraph logic.
-
-### Quick Setup
-
-**Step 1 — Get your free API key:** [atlascloud.ai/console/coding-plan](https://www.atlascloud.ai/console/coding-plan)
-
-**Step 2 — Update `.env.development`:**
-
-```env
-OPENAI_API_KEY=<your-atlascloud-key>
-OPENAI_BASE_URL=https://api.atlascloud.ai/v1
-DEFAULT_LLM_MODEL=deepseek-ai/deepseek-v4-pro
-```
-
-**Step 3 — Or use directly in code:**
-
-```python
-from langchain_openai import ChatOpenAI
-
-llm = ChatOpenAI(
-    model="deepseek-ai/deepseek-v4-pro",
-    openai_api_base="https://api.atlascloud.ai/v1",
-    openai_api_key="<your-atlascloud-key>",
-    max_tokens=512,  # reasoning model requires max_tokens >= 512
-)
-```
-
-This works as a drop-in replacement anywhere `ChatOpenAI` is used in your LangGraph agent — including the `LLMRegistry`, the circular fallback service, and mem0 long-term memory.
-
-<details>
-<summary>📋 Model catalog — a current selection (136 available in total)</summary>
-
-| Model ID | Provider |
-|---|---|
-| `openai/gpt-5.6-luna` | OpenAI |
-| `openai/gpt-5.6-sol` | OpenAI |
-| `openai/gpt-5.6-terra` | OpenAI |
-| `openai/gpt-5.5` | OpenAI |
-| `openai/gpt-5.4` | OpenAI |
-| `openai/gpt-5.4-mini` | OpenAI |
-| `openai/gpt-5.4-nano` | OpenAI |
-| `openai/gpt-5.3-codex` | OpenAI |
-| `openai/gpt-5.2` | OpenAI |
-| `anthropic/claude-opus-5` | Anthropic |
-| `anthropic/claude-sonnet-5` | Anthropic |
-| `anthropic/claude-opus-4.8` | Anthropic |
-| `anthropic/claude-sonnet-4.6` | Anthropic |
-| `anthropic/claude-haiku-4.5-20251001` | Anthropic |
-| `google/gemini-3.5-flash` | Google |
-| `google/gemini-3.1-pro-preview` | Google |
-| `google/gemini-3.1-flash-lite` | Google |
-| `google/gemini-2.5-pro` | Google |
-| `deepseek-ai/deepseek-v4-pro` | DeepSeek |
-| `deepseek-ai/deepseek-v4-flash` | DeepSeek |
-| `qwen/qwen3.8-max` | Alibaba Qwen |
-| `qwen/qwen3.7-plus` | Alibaba Qwen |
-| `qwen/qwen3.5-plus` | Alibaba Qwen |
-| `moonshotai/kimi-k3` | Moonshot AI |
-| `moonshotai/kimi-k2.7-code` | Moonshot AI |
-| `zai-org/glm-5.2` | Zhipu AI |
-| `zai-org/glm-5.1` | Zhipu AI |
-| `zai-org/glm-5` | Zhipu AI |
-| `minimaxai/minimax-m3` | MiniMax |
-| `minimaxai/minimax-m2.7` | MiniMax |
-| `xai/grok-4.6` | xAI |
-| `xai/grok-4.5` | xAI |
-| `bytedance/doubao-seed-2.1-pro-260628` | ByteDance |
-| `xiaomi/mimo-v2.5-pro` | Xiaomi |
-| `tencent/hy3` | Tencent |
-
-[View live model list →](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=fastapi-langgraph-agent-production-ready-template)
-
-</details>
+**给 AI 工程师用的地基**，不是教程项目。
 
 ---
 
-## What's included
+## 包含内容
 
-- **LangGraph** stateful agent with checkpointing, tool calling, and human-in-the-loop support
-- **Long-term memory** via mem0 + pgvector — semantic search per user, cache-backed
-- **LLM service** with circular model fallback, exponential backoff retries, and total timeout budget
-- **Langfuse** tracing on all LLM calls; Prometheus metrics + Grafana dashboards
-- **JWT auth** with session management; rate limiting via slowapi
-- **Alembic** migrations; optional Valkey/Redis cache layer
-- **Structured logging** with request/session/user context on every line
+- **LangGraph** 有状态智能体，支持检查点（checkpointer）、工具调用与人工介入（HITL）
+- **长期记忆**：基于 mem0 + pgvector——按用户进行语义检索，并由缓存支撑
+- **LLM 服务**：支持循环模型降级、指数退避重试以及总超时预算
+- **Langfuse** 追踪覆盖全部 LLM 调用；Prometheus 指标 + Grafana 看板
+- **JWT 认证**与会话管理；基于 slowapi 的限流
+- **Alembic** 迁移；可选的 Redis 缓存层
+- **结构化日志**，每一行都带请求/会话/用户上下文
 
-## Quickstart
+## 快速开始
 
 ```bash
-git clone <repo-url> my-agent && cd my-agent
+git clone <repo-url> fly-agent && cd fly-agent
 cp .env.example .env.development   # fill in your keys
 make install
 make docker-up                     # starts API + PostgreSQL
 ```
 
-Open [http://localhost:8000/docs](http://localhost:8000/docs) to see the interactive API.
+打开 [http://localhost:8000/docs](http://localhost:8000/docs) 查看交互式 API 文档。
 
-> For local development without Docker see [docs/getting-started.md](docs/getting-started.md).
+> 若要在不使用 Docker 的情况下本地开发，请参阅 [docs/getting-started.md](docs/getting-started.md)。
 
-## Documentation
+## 文档
 
-| Guide | What it covers |
+| 指南 | 内容简介 |
 |---|---|
-| [Getting Started](docs/getting-started.md) | Prerequisites, local setup, first API call |
-| [Architecture](docs/architecture.md) | System design, request flow, component diagrams |
-| [Configuration](docs/configuration.md) | All environment variables with defaults |
-| [Authentication](docs/authentication.md) | JWT flow, sessions, endpoint reference |
-| [Database & Migrations](docs/database.md) | Schema, Alembic migrations, pgvector |
-| [LLM Service](docs/llm-service.md) | Models, retries, fallback, timeout budget |
-| [Memory](docs/memory.md) | mem0 long-term memory, cache layer |
-| [Observability](docs/observability.md) | Langfuse, structured logging, Prometheus, profiling |
-| [Evaluation](docs/evaluation.md) | Eval framework, custom metrics, reports |
-| [Docker](docs/docker.md) | Docker, Compose, full monitoring stack |
+| [入门指南](docs/getting-started.md) | 前置条件、本地环境搭建、首次 API 调用 |
+| [架构](docs/architecture.md) | 系统设计、请求流程、组件图 |
+| [配置](docs/configuration.md) | 全部环境变量及其默认值 |
+| [认证](docs/authentication.md) | JWT 流程、会话、端点参考 |
+| [数据库与迁移](docs/database.md) | Schema、Alembic 迁移、pgvector |
+| [LLM 服务](docs/llm-service.md) | 模型、重试、降级、超时预算 |
+| [记忆](docs/memory.md) | mem0 长期记忆、缓存层 |
+| [可观测性](docs/observability.md) | Langfuse、结构化日志、Prometheus、性能分析 |
+| [评测](docs/evaluation.md) | 评测框架、自定义指标、报告 |
+| [Docker](docs/docker.md) | Docker、Compose、完整监控栈 |
 
-## Project structure
+## 项目结构
 
 ```
 app/
@@ -141,7 +52,7 @@ app/
   core/
     langgraph/     # Agent graph + tools
     prompts/       # System prompt template
-    cache.py       # Valkey/Redis + in-memory fallback
+    cache.py       # Redis + in-memory fallback
     config.py      # Settings
     middleware.py  # Metrics, logging context, profiling
     limiter.py     # Rate limiting
@@ -152,33 +63,33 @@ alembic/           # Database migrations
 evals/             # LLM evaluation framework
 ```
 
-## Contributing
+## 贡献
 
-PRs welcome. Please read [docs/getting-started.md](docs/getting-started.md) to get your environment set up, then follow the coding conventions in [AGENTS.md](AGENTS.md).
+欢迎提交 PR。请先阅读 [docs/getting-started.md](docs/getting-started.md) 完成环境搭建，然后遵循 [AGENTS.md](AGENTS.md) 中的编码规范。
 
-Report security issues privately — see [SECURITY.md](SECURITY.md).
+安全问题请私下报告——参见 [SECURITY.md](SECURITY.md)。
 
-## License
+## 许可证
 
-See [LICENSE](LICENSE).
+参见 [LICENSE](LICENSE)。
 
-## FAQ
+## 常见问题
 
-### General
+### 通用
 
-**What is this template?**
-A production-ready foundation for AI agent backends built on FastAPI + LangGraph. It bundles the components you'd otherwise wire up by hand: stateful conversations, long-term memory, tool calling, observability, rate limiting, and JWT auth.
+**这个脚手架是什么？**
+一个基于 FastAPI + LangGraph 构建、可用于生产环境的 AI 智能体后端基础框架。它把原本需要你手工串联的组件打包在一起：有状态对话、长期记忆、工具调用、可观测性、限流与 JWT 认证。
 
-**How does this differ from a basic LangGraph setup?**
-The base LangGraph quickstart stops at "agent runs locally". This template adds Alembic migrations, mem0 + pgvector long-term memory, Langfuse tracing, Prometheus + Grafana dashboards, JWT sessions, slowapi rate limiting, structured logging with per-request context, and a circular-fallback LLM service — production concerns you'd otherwise build separately.
+**它与基础的 LangGraph 搭建方式有何不同？**
+LangGraph 的基础快速开始止步于「智能体能在本地跑起来」。本脚手架则补充了 Alembic 迁移、mem0 + pgvector 长期记忆、Langfuse 追踪、Prometheus + Grafana 看板、JWT 会话、slowapi 限流、带每次请求上下文的结构化日志，以及具备循环降级能力的 LLM 服务——这些都是你原本需要单独构建的生产级关注点。
 
-### Setup & Configuration
+### 安装与配置
 
-**Do I need Docker?**
-Recommended but not required. `make docker-up` starts the API + PostgreSQL together. For local-only setup see [docs/getting-started.md](docs/getting-started.md).
+**我需要 Docker 吗？**
+推荐但并非必需。`make docker-up` 会一并启动 API 与 PostgreSQL。若仅做本地环境搭建，请参阅 [docs/getting-started.md](docs/getting-started.md)。
 
-**Which LLM providers are supported?**
-Any provider LangChain's [`init_chat_model`](https://python.langchain.com/docs/how_to/chat_models_universal_init/) supports. The `LLMRegistry` in `app/services/llm/registry.py` builds every model through `init_chat_model`, so a bare name like `gpt-5.6-luna` keeps resolving to OpenAI unchanged, while a `provider:model` string (e.g. `anthropic:claude-opus-4-6`, `ollama:llama3`) adds any other provider. Install that provider's LangChain integration package — see the `anthropic` / `ollama` / `google-genai` extras in `pyproject.toml` — and set its API key via the provider's own env var (e.g. `ANTHROPIC_API_KEY`). Configure the default model via `DEFAULT_LLM_MODEL` in `.env.development`.
+**支持哪些 LLM 供应商？**
+任何 LangChain 的 [`init_chat_model`](https://python.langchain.com/docs/how_to/chat_models_universal_init/) 所支持的供应商均可。`app/services/llm/registry.py` 中的 `LLMRegistry` 通过 `init_chat_model` 构建每一个模型，因此像 `gpt-5.6-luna` 这样的裸名称仍会照旧解析为 OpenAI 模型，而 `provider:model` 形式的字符串（例如 `anthropic:claude-opus-4-6`、`ollama:llama3`）则可加入其他任意供应商。安装该供应商对应的 LangChain 集成包——参见 `pyproject.toml` 中的 `anthropic` / `ollama` / `google-genai` 附加依赖——并通过该供应商自己的环境变量设置其 API 密钥（例如 `ANTHROPIC_API_KEY`）。默认模型通过 `.env.development` 中的 `DEFAULT_LLM_MODEL` 配置。
 
 ```bash
 # uv sync with the anthropic extra installed
@@ -193,16 +104,16 @@ LLM_CONFIGS: List[Dict[str, Any]] = [
 ]
 ```
 
-**How do I configure long-term memory?**
-Long-term memory is self-hosted: mem0 runs in-process and persists into your existing PostgreSQL via pgvector — there is no separate mem0 cloud account or API key. You only need a working `OPENAI_API_KEY` (used for fact extraction + embeddings) and the pgvector extension enabled. See [docs/memory.md](docs/memory.md) for details.
+**如何配置长期记忆？**
+长期记忆采用自托管方式：mem0 在进程内运行，并通过 pgvector 持久化到你已有的 PostgreSQL 中——不需要单独的 mem0 云账号或 API 密钥。你只需要一个可用的 `OPENAI_API_KEY`（用于事实抽取 + 向量嵌入）以及已启用的 pgvector 扩展。详情参见 [docs/memory.md](docs/memory.md)。
 
-### Development
+### 开发
 
-**How do I add a custom tool?**
-Drop a LangChain `@tool`-decorated function in `app/core/langgraph/tools/` and register it in the `tools` list exported from that package. The agent picks it up on next start; no graph changes needed.
+**如何添加自定义工具？**
+在 `app/core/langgraph/tools/` 下放一个用 LangChain `@tool` 装饰的函数，并在该包导出的 `tools` 列表中注册它。智能体下次启动时即可加载，无需改动图结构。
 
-**Can I run multiple agents (supervisor, sub-agents)?**
-Yes. The template ships a single agent, but any compiled graph can be added as a node of the main graph. It shares `GraphState` (so `messages` flow through) and inherits the parent's Postgres checkpointer, so no extra persistence setup is needed. In `create_graph()` in `app/core/langgraph/graph.py`:
+**可以运行多个智能体吗（supervisor、子智能体）？**
+可以。脚手架默认只提供一个智能体，但任何已编译的图都可以作为主图的一个节点加入。它共享 `GraphState`（因此 `messages` 可以流通），并继承父级的 Postgres 检查点（checkpointer），所以无需额外的持久化配置。在 `app/core/langgraph/graph.py` 的 `create_graph()` 中：
 
 ```python
 research = StateGraph(GraphState)
@@ -215,25 +126,25 @@ graph_builder.add_node("research_agent", research_agent)
 graph_builder.add_edge("research_agent", "chat")
 ```
 
-`chat` then acts as the supervisor: return `Command(goto="research_agent")` to delegate, and the sub-agent's reply comes back to `chat`. Add one node per specialist. For a prebuilt version, see [`langgraph-supervisor`](https://github.com/langchain-ai/langgraph-supervisor-py).
+随后 `chat` 便充当 supervisor：返回 `Command(goto="research_agent")` 即可委派任务，子智能体的回复会回到 `chat`。每新增一个专精智能体就增加一个节点。若想使用预构建版本，参见 [`langgraph-supervisor`](https://github.com/langchain-ai/langgraph-supervisor-py)。
 
-**How does the LLM service handle failures?**
-Two layers: (1) per-call exponential-backoff retry via `tenacity`, (2) **circular fallback** — if the active model exhausts its retries, the service rotates to the next model in `LLMRegistry` and continues. A total timeout budget caps the whole call so latency stays bounded. See [docs/llm-service.md](docs/llm-service.md).
+**LLM 服务如何处理故障？**
+分两层：(1) 通过 `tenacity` 对每次调用做指数退避重试；(2) **循环降级**——若当前模型用完重试次数，服务会轮转到 `LLMRegistry` 中的下一个模型继续执行。总超时预算会为整个调用设上限，使延迟保持在可控范围内。参见 [docs/llm-service.md](docs/llm-service.md)。
 
-**Can I use this without Langfuse?**
-Yes. Set `LANGFUSE_TRACING_ENABLED=false` (or omit the Langfuse keys). The agent runs unchanged; structured logs still capture request/session/user context.
+**可以不使用 Langfuse 吗？**
+可以。设置 `LANGFUSE_TRACING_ENABLED=false`（或省略 Langfuse 相关密钥）。智能体照常运行；结构化日志仍会记录请求/会话/用户上下文。
 
-### Troubleshooting
+### 故障排查
 
-**The API won't start**
-- Ensure PostgreSQL is running (`make docker-up` brings it up alongside the API)
-- Confirm `.env.development` exists — copy from `.env.example` and fill in required keys
-- Apply migrations: `make migrate`
+**API 无法启动**
+- 确认 PostgreSQL 正在运行（`make docker-up` 会连同 API 一起启动它）
+- 确认 `.env.development` 存在——从 `.env.example` 复制并填入必需的密钥
+- 执行迁移：`make migrate`
 
-**Memory / semantic search returns nothing**
-- Verify the `pgvector` extension is enabled in your PostgreSQL instance
-- Confirm `OPENAI_API_KEY` is valid (mem0 calls OpenAI for fact extraction + embeddings)
-- Check `LONG_TERM_MEMORY_MODEL` and `LONG_TERM_MEMORY_EMBEDDER_MODEL` are set in `.env.development`
+**记忆 / 语义检索没有返回结果**
+- 检查你的 PostgreSQL 实例是否已启用 `pgvector` 扩展
+- 确认 `OPENAI_API_KEY` 有效（mem0 需调用 OpenAI 进行事实抽取 + 向量嵌入）
+- 检查 `.env.development` 中是否已设置 `LONG_TERM_MEMORY_MODEL` 与 `LONG_TERM_MEMORY_EMBEDDER_MODEL`
 
-**Rate limiting is too aggressive**
-Limits are defined in `app/core/limiter.py` (slowapi). Adjust per-route decorators or the default rate in that file. See [docs/configuration.md](docs/configuration.md) for the related env vars.
+**限流过于严格**
+限流阈值定义在 `app/core/limiter.py`（slowapi）中。可调整各路由的装饰器或该文件中的默认速率。相关环境变量参见 [docs/configuration.md](docs/configuration.md)。

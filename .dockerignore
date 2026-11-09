@@ -1,13 +1,25 @@
-# Version control
+# =============================================================================
+# Docker 构建上下文排除清单
+# =============================================================================
+# 这份清单决定 `docker build` 时哪些文件会被送到构建上下文里。
+# 排除得越干净，构建越快、镜像越小，也更不容易把密钥/日志误打进镜像。
+# 语法接近 .gitignore：支持通配符、目录名（可带或不带结尾斜杠）；
+# 以 # 开头为注释，行首 ! 表示「例外，重新纳入」。
+# =============================================================================
+
+# 版本控制相关：镜像里不需要 git 历史（动辄几十 MB），也不需要 CI 配置
 .git
 .gitignore
 .github
 
-# Environment files - these will be passed as build args
+# 环境变量文件：一个都不能进镜像！
+# 注意：这些文件是在「运行时」由 docker-compose 的 env_file / environment 注入的，
+# 不是构建参数（Dockerfile 里也没有声明对应的 ARG），所以排除它们不会影响启动。
+# 反过来说，一旦打进去，密钥就永久留在了镜像层里，删都删不掉。
 .env*
 .env.example
 
-# Python
+# Python 运行时产物与测试缓存
 __pycache__/
 *.py[cod]
 *$py.class
@@ -23,42 +35,45 @@ pytestdebug.log
 *.egg-info/
 *.ipynb
 
-# Virtual environments
+# 虚拟环境：镜像里由 uv 自己装 .venv，
+# 把宿主机的塞进去只会造成「平台不一致」的诡异问题（Windows 的 .venv 里
+# 全是 .exe 和 .pyd，在 Linux 容器里完全不可用）
 .venv
 venv
 ENV/
 env/
 
-# Development tools
+# 开发工具的本地配置
 .idea
 .vscode
 *.swp
 *.swo
 .DS_Store
 
-# Logs
+# 日志：容器里的日志由挂载卷接管，不需要构建时带进去
 logs/
 *.log
 
-# Docker
+# Docker 自身文件：构建时不需要它们参与（Dockerfile 由 build 命令直接读取）
 Dockerfile
 .dockerignore
 docker-compose.yml
 
-# Documentation
+# 文档：镜像里跑服务用不上，能省一点是一点
+# 注意 *.md 会连 CHANGELOG 之类的文件一起排除
 docs/
 README.md
 *.md
 
-# Build artifacts
+# 构建产物（部分与上面重复，属于历史遗留，保留不影响行为）
 *.pyc
 *.pyo
 *.egg-info
 dist/
 build/
 
-# other
+# 其他：手工导出的建表语句，不属于运行时资源
 schema.sql
 
-# Reports
+# 评测报告：本地跑评测生成的输出，不进镜像
 evals/reports/

@@ -6,5 +6,7 @@ Rules:
 - No quotes, no trailing punctuation, no prefixes like "Title:" or "Subject:"
 - Capture the specific topic, not a generic description
 
+Respond with JSON only, in the form {"title": "<the title>"}.
+
 User message:
 {user_message}

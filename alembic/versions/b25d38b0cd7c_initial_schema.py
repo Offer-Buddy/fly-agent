@@ -1,4 +1,4 @@
-"""Initial schema.
+"""初始表结构：user / session / thread 三张表。
 
 Revision ID: b25d38b0cd7c
 Revises:
@@ -13,7 +13,7 @@ import sqlmodel  # noqa: F401
 
 from alembic import op
 
-# revision identifiers, used by Alembic.
+# Alembic 的版本标识
 revision: str = "b25d38b0cd7c"  # pragma: allowlist secret
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
@@ -21,7 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
+    """建表。"""
     op.create_table(
         "user",
         sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -51,7 +51,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Downgrade schema."""
+    """回滚：按依赖倒序删表。
+
+    注意先删 session 再删 user，否则外键约束会拦住。
+    """
     op.drop_table("thread")
     op.drop_table("session")
     op.drop_index(op.f("ix_user_email"), table_name="user")

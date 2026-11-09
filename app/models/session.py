@@ -1,4 +1,4 @@
-"""This file contains the session model for the application."""
+"""聊天会话模型。"""
 
 from typing import (
     TYPE_CHECKING,
@@ -17,16 +17,15 @@ if TYPE_CHECKING:
 
 
 class Session(BaseModel, table=True):
-    """Session model for storing chat sessions.
+    """会话表：一次连续对话对应一条记录。
 
     Attributes:
-        id: The primary key
-        user_id: Foreign key to the user
-        name: Name of the session (defaults to empty string)
-        username: Display name copied from the user at session creation
-        created_at: When the session was created
-        messages: Relationship to session messages
-        user: Relationship to the session owner
+        id: 主键，用 UUID 字符串（与 LangGraph 的 thread_id 一致）
+        user_id: 外键，指向所属用户
+        name: 会话名，默认空串，由自动命名逻辑填充
+        username: 创建时从用户表冗余的显示名，供 LLM 个性化使用
+        created_at: 创建时间（继承自 BaseModel）
+        user: 反向关联所属用户
     """
 
     id: str = Field(primary_key=True)

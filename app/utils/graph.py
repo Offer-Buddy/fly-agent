@@ -1,4 +1,4 @@
-"""This file contains the graph utilities for the application."""
+"""图相关的工具函数：消息转换、token 计数、上下文裁剪、内容抽取。"""
 
 from typing import cast
 
@@ -13,18 +13,26 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.schemas import Message
 
-# Cache tiktoken encoding at module level — thread-safe and reusable
+# 在模块级缓存 tiktoken 编码器：线程安全，且避免每次计数都重新加载词表
 try:
     _TIKTOKEN_ENCODING = tiktoken.encoding_for_model(settings.DEFAULT_LLM_MODEL)
 except KeyError:
+    # 自定义模型名（如 deepseek-*）tiktoken 不认识，退回通用词表
     _TIKTOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
 
 
 def _count_tokens_tiktoken(messages: list) -> int:
-    """Count tokens locally using tiktoken — no API call needed."""
+    """用 tiktoken 在本地估算 token 数，不产生 API 调用。
+
+    Args:
+        messages: 消息列表，元素可以是 dict 或 BaseMessage
+
+    Returns:
+        int: 估算的 token 总数
+    """
     num_tokens = 0
     for message in messages:
-        # Every message has overhead tokens for role/name
+        # 每条消息都有固定开销（role、name 等字段）
         num_tokens += 4
         if isinstance(message, dict):
             for _, value in message.items():
@@ -40,34 +48,34 @@ def _count_tokens_tiktoken(messages: list) -> int:
                         num_tokens += len(_TIKTOKEN_ENCODING.encode(block))
                     elif isinstance(block, dict) and "text" in block:
                         num_tokens += len(_TIKTOKEN_ENCODING.encode(block["text"]))
-    num_tokens += 2  # every reply is primed with assistant
+    num_tokens += 2  # 回复侧还要预留 assistant 的起始标记
     return num_tokens
 
 
 def dump_messages(messages: list[Message]) -> list[dict]:
-    """Dump the messages to a list of dictionaries.
+    """把 pydantic 消息对象转成普通字典列表。
 
     Args:
-        messages (list[Message]): The messages to dump.
+        messages: 待转换的消息
 
     Returns:
-        list[dict]: The dumped messages.
+        list[dict]: 转换后的字典列表
     """
     return [message.model_dump() for message in messages]
 
 
 def extract_text_content(content: str | list) -> str:
-    """Extract plain text from an LLM content value.
+    """从模型返回的 content 中抽出纯文本。
 
-    Handles both the simple string format and the structured block list returned
-    by GPT-5 / Responses API models:
-        [{'type': 'reasoning', ...}, {'type': 'text', 'text': '...'}]
+    需要同时兼容两种格式：简单的字符串，以及 GPT-5 / Responses API 那种
+    结构化的内容块列表，例如
+    ``[{'type': 'reasoning', ...}, {'type': 'text', 'text': '...'}]``。
 
     Args:
-        content: Raw content from a LangChain BaseMessage.
+        content: LangChain BaseMessage 的原始 content
 
     Returns:
-        Plain text string (empty string when nothing extractable is present).
+        str: 抽出的纯文本；没有可抽取内容时返回空串
     """
     if isinstance(content, str):
         return content
@@ -80,6 +88,7 @@ def extract_text_content(content: str | list) -> str:
             if block.get("type") == "text":
                 parts.append(block.get("text", ""))
             elif block.get("type") == "reasoning":
+                # 思考过程不对外输出，只记一条调试日志
                 logger.debug(
                     "reasoning_block_received",
                     reasoning_id=block.get("id"),
@@ -89,24 +98,32 @@ def extract_text_content(content: str | list) -> str:
 
 
 def latest_user_text(messages: list[BaseMessage]) -> str:
-    """Return the text of the most recent user message in a LangGraph message list.
+    """取消息列表里最近一条用户消息的文本。
 
-    Walks the list in reverse so the assistant reply, tool calls and tool
-    messages after it are skipped. Returns an empty string when there is no
-    user message.
+    从后往前找，因此会自动跳过助手回复、工具调用与工具结果。
+    没有用户消息时返回空串。
+
+    Args:
+        messages: LangGraph 的消息列表
+
+    Returns:
+        str: 最近一条用户消息的纯文本
     """
     last_user = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
     return extract_text_content(last_user.content) if last_user else ""
 
 
 def process_llm_response(response: BaseMessage) -> BaseMessage:
-    """Normalise a raw LLM response so that ``response.content`` is always a plain string, regardless of the provider's content format.
+    """把模型响应规整成 ``content`` 一定是纯字符串的形式。
+
+    不同供应商的 content 格式不一致（字符串 / 内容块列表），
+    下游统一按字符串处理可以省掉一堆判断。
 
     Args:
-        response: The raw response from the LLM.
+        response: 模型原始响应
 
     Returns:
-        The same BaseMessage instance with ``content`` set to a plain string.
+        BaseMessage: 同一个实例，``content`` 已被替换为纯字符串
     """
     if isinstance(response.content, list):
         response.content = extract_text_content(response.content)
@@ -119,14 +136,17 @@ def process_llm_response(response: BaseMessage) -> BaseMessage:
 
 
 def prepare_messages(messages: list[Message], system_prompt: str) -> list[Message]:
-    """Prepare the messages for the LLM.
+    """组装最终发给 LLM 的消息：系统提示 + 按 token 预算裁剪后的历史。
+
+    裁剪策略是「保留最近的」，且必须从用户消息开始，避免出现
+    「助手回复在开头」这种模型无法处理的序列。
 
     Args:
-        messages (list[Message]): The messages to prepare.
-        system_prompt (str): The system prompt to use.
+        messages: 历史消息
+        system_prompt: 本次要使用的系统提示
 
     Returns:
-        list[Message]: The prepared messages.
+        list[Message]: 可直接发送的消息列表
     """
     try:
         trimmed_messages = _trim_messages(
@@ -139,18 +159,18 @@ def prepare_messages(messages: list[Message], system_prompt: str) -> list[Messag
             allow_partial=False,
         )
     except ValueError as e:
-        # Handle unrecognized content blocks (e.g., reasoning blocks from GPT-5)
+        # 遇到不认识的内容块（如 GPT-5 的 reasoning 块）时，计数会失败；
+        # 这种情况放弃裁剪，把消息原样发出去，总比报错强。
         if "Unrecognized content block type" in str(e):
             logger.warning(
                 "token_counting_failed_skipping_trim",
                 error=str(e),
                 message_count=len(messages),
             )
-            # Skip trimming and return all messages
             trimmed_messages = messages
         else:
             raise
 
-    # langchain-core >= 1.6 types trim_messages() as returning BaseMessage;
-    # cast back to the declared return type to keep pyright passing.
+    # langchain-core >= 1.6 把 trim_messages() 的返回类型标成了 BaseMessage，
+    # 这里 cast 回声明的返回类型，让 pyright 通过。
     return cast(list[Message], [Message(role="system", content=system_prompt)] + trimmed_messages)

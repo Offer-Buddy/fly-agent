@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Command-line interface for running evaluations."""
+"""LLM 评测的命令行入口。
+
+支持三种跑法：默认（读命令行参数）、``--interactive``（逐项询问）、
+``--quick``（全用默认值直接开跑）。
+
+说明：终端里的提示与结果文案保持英文——它们是程序输出，不是文档；
+本文件只把注释与 docstring 中文化。
+"""
 
 import argparse
 import asyncio
@@ -17,13 +24,13 @@ from colorama import (
     Style,
 )
 
-# Fix import path for app module
+# 让脚本能直接 import 到项目内的 app 包
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.core.config import settings
 from app.core.logging import logger
 from evals.evaluator import Evaluator
 
-# Default configuration
+# 默认配置：模型与端点都来自 settings
 DEFAULT_CONFIG = {
     "generate_report": True,
     "model": settings.EVALUATION_LLM,
@@ -32,10 +39,10 @@ DEFAULT_CONFIG = {
 
 
 def print_title(title: str) -> None:
-    """Print a formatted title with colors.
+    """打印带颜色与分隔线的大标题。
 
     Args:
-        title: The title text to print
+        title: 标题文字
     """
     print("\n" + "=" * 60)
     print(f"{Fore.CYAN}{Style.BRIGHT}{title.center(60)}{Style.RESET_ALL}")
@@ -43,50 +50,50 @@ def print_title(title: str) -> None:
 
 
 def print_info(message: str) -> None:
-    """Print an info message with colors.
+    """打印一条普通信息（绿色）。
 
     Args:
-        message: The message to print
+        message: 信息内容
     """
     print(f"{Fore.GREEN}• {message}{Style.RESET_ALL}")
 
 
 def print_warning(message: str) -> None:
-    """Print a warning message with colors.
+    """打印一条警告（黄色）。
 
     Args:
-        message: The message to print
+        message: 警告内容
     """
     print(f"{Fore.YELLOW}⚠ {message}{Style.RESET_ALL}")
 
 
 def print_error(message: str) -> None:
-    """Print an error message with colors.
+    """打印一条错误（红色）。
 
     Args:
-        message: The message to print
+        message: 错误内容
     """
     print(f"{Fore.RED}✗ {message}{Style.RESET_ALL}")
 
 
 def print_success(message: str) -> None:
-    """Print a success message with colors.
+    """打印一条成功提示（绿色对勾）。
 
     Args:
-        message: The message to print
+        message: 提示内容
     """
     print(f"{Fore.GREEN}✓ {message}{Style.RESET_ALL}")
 
 
 def get_user_input(prompt: str, default: Optional[str] = None) -> Optional[str]:
-    """Get user input with a colored prompt.
+    """带彩色提示的输入函数。
 
     Args:
-        prompt: The prompt to display
-        default: Default value if user presses enter
+        prompt: 提示文字
+        default: 用户直接回车时采用的默认值
 
     Returns:
-        User input or default value (which may be None if no default was supplied)
+        用户输入，或默认值（未提供默认值时可能为 None）
     """
     default_text = f" [{default}]" if default else ""
     user_input = input(f"{Fore.BLUE}{prompt}{default_text}: {Style.RESET_ALL}")
@@ -94,14 +101,14 @@ def get_user_input(prompt: str, default: Optional[str] = None) -> Optional[str]:
 
 
 def get_yes_no(prompt: str, default: bool = True) -> bool:
-    """Get a yes/no response from the user.
+    """询问一个是 / 否问题。
 
     Args:
-        prompt: The prompt to display
-        default: Default value if user presses enter
+        prompt: 提示文字
+        default: 用户直接回车时的默认答案
 
     Returns:
-        True for yes, False for no
+        bool: 选是返回 True
     """
     default_value = "Y/n" if default else "y/N"
     response = get_user_input(f"{prompt} {default_value}")
@@ -113,10 +120,12 @@ def get_yes_no(prompt: str, default: bool = True) -> bool:
 
 
 def display_summary(report: Dict[str, Any]) -> None:
-    """Display a summary of the evaluation results.
+    """在终端打印评测结果摘要。
+
+    成功率按颜色分级：>80% 绿、>50% 黄、其余红，方便一眼看出这次跑得好不好。
 
     Args:
-        report: The evaluation report
+        report: 评测报告字典
     """
     print_title("Evaluation Summary")
 
@@ -162,10 +171,10 @@ def display_summary(report: Dict[str, Any]) -> None:
 
 
 async def run_evaluation(generate_report: bool = True) -> None:
-    """Run the evaluation process.
+    """执行一次评测。
 
     Args:
-        generate_report: Whether to generate a JSON report
+        generate_report: 是否额外输出 JSON 报告文件
     """
     print_title("Starting Evaluation")
     print_info(f"Using model: {settings.EVALUATION_LLM}")
@@ -177,7 +186,7 @@ async def run_evaluation(generate_report: bool = True) -> None:
 
         print_success("Evaluation completed successfully!")
 
-        # Display summary of results
+        # 跑完立刻打印摘要
         display_summary(evaluator.report)
 
     except Exception as e:
@@ -187,10 +196,10 @@ async def run_evaluation(generate_report: bool = True) -> None:
 
 
 def display_configuration(config: Dict[str, Any]) -> None:
-    """Display the current configuration.
+    """打印当前生效的评测配置。
 
     Args:
-        config: The configuration dictionary
+        config: 配置字典
     """
     print_title("Configuration")
     print_info(f"Model: {config['model']}")
@@ -199,22 +208,21 @@ def display_configuration(config: Dict[str, Any]) -> None:
 
 
 def interactive_mode() -> None:
-    """Run the evaluator in interactive mode."""
+    """交互式引导：逐项确认配置后再开跑。"""
     colorama.init()
 
-    # Create a configuration with default values
+    # 以默认值为起点
     config = DEFAULT_CONFIG.copy()
 
     print_title("Evaluation Runner")
     print_info("Welcome to the Evaluation Runner!")
     print_info("Press Enter to accept default values or input your own.")
 
-    # Display current configuration
     display_configuration(config)
 
     print("\n" + f"{Fore.CYAN}Configuration Options (press Enter to accept defaults):{Style.RESET_ALL}")
 
-    # Allow user to change configuration or accept defaults
+    # 允许逐项修改，也可以全部用默认值
     change_config = get_yes_no("Would you like to change the default configuration?", default=False)
 
     if change_config:
@@ -230,24 +238,24 @@ def interactive_mode() -> None:
 
 
 def quick_mode() -> None:
-    """Run the evaluator with all default settings."""
+    """全默认配置直接开跑，不做任何交互（对应 ``make eval-quick``）。"""
     colorama.init()
     print_title("Quick Evaluation")
     print_info("Running evaluation with default settings...")
     print_info("(Press Ctrl+C to cancel)")
 
-    # Display defaults
     display_configuration(DEFAULT_CONFIG)
 
     try:
         asyncio.run(run_evaluation(generate_report=DEFAULT_CONFIG["generate_report"]))
     except KeyboardInterrupt:
+        # Ctrl+C 属于正常的主动取消，退出码 0
         print_warning("\nEvaluation canceled by user.")
         sys.exit(0)
 
 
 def main() -> None:
-    """Main entry point for the command-line interface."""
+    """命令行入口：按参数分发到三种运行模式。"""
     parser = argparse.ArgumentParser(description="Run evaluations on model outputs")
     parser.add_argument("--no-report", action="store_true", help="Don't generate a JSON report")
     parser.add_argument("--interactive", action="store_true", help="Run in interactive mode")
@@ -260,7 +268,7 @@ def main() -> None:
     elif args.interactive:
         interactive_mode()
     else:
-        # Run with command-line arguments
+        # 直接按命令行参数跑（默认生成报告）
         asyncio.run(run_evaluation(generate_report=not args.no_report))
 
 

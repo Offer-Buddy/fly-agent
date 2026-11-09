@@ -1,7 +1,11 @@
-"""Authentication and authorization endpoints for the API.
+"""鉴权与授权接口。
 
-This module provides endpoints for user registration, login, session management,
-and token verification.
+覆盖用户注册、登录、会话创建 / 改名 / 删除、会话列表，以及两个供其他路由
+复用的依赖：``get_current_user``（按用户 token 校验）与
+``get_current_session``（按会话 token 校验）。
+
+注意：``HTTPException`` 的 ``detail`` 会原样返回给客户端，属于对外契约，
+因此保持英文，不要翻译。
 """
 
 import uuid
@@ -46,27 +50,27 @@ from app.utils.sanitization import (
 
 router = APIRouter()
 security = HTTPBearer()
-# Reuse the shared instance: DatabaseService.__init__ builds its own engine, so a
-# second instance here meant two independent connection pools.
+# 复用共享实例：DatabaseService.__init__ 会自己建引擎，
+# 在这里新建一个实例等于多出一套独立连接池。
 db_service = database_service
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> User:
-    """Get the current user ID from the token.
+    """从 token 解析出当前用户。
 
     Args:
-        credentials: The HTTP authorization credentials containing the JWT token.
+        credentials: 携带 JWT 的 HTTP 鉴权凭证
 
     Returns:
-        User: The user extracted from the token.
+        User: token 对应的用户
 
     Raises:
-        HTTPException: If the token is invalid or missing.
+        HTTPException: token 无效、缺失或对应用户不存在
     """
     try:
-        # Sanitize token
+        # 先清洗 token，防止超长或含控制字符的输入
         token = sanitize_string(credentials.credentials)
 
         user_id = verify_token(token)
@@ -78,7 +82,7 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Verify user exists in database
+        # 确认用户仍然存在（token 可能签发于删除之前）
         user_id_int = int(user_id)
         user = await db_service.get_user(user_id_int)
         if user is None:
@@ -89,7 +93,7 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Bind user_id to logging context for all subsequent logs in this request
+        # 把 user_id 绑到日志上下文，本次请求后续日志都会带上
         bind_context(user_id=user_id_int)
 
         return user
@@ -105,19 +109,19 @@ async def get_current_user(
 async def get_current_session(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> Session:
-    """Get the current session ID from the token.
+    """从 token 解析出当前会话。
 
     Args:
-        credentials: The HTTP authorization credentials containing the JWT token.
+        credentials: 携带 JWT 的 HTTP 鉴权凭证
 
     Returns:
-        Session: The session extracted from the token.
+        Session: token 对应的会话
 
     Raises:
-        HTTPException: If the token is invalid or missing.
+        HTTPException: token 无效、缺失或对应会话不存在
     """
     try:
-        # Sanitize token
+        # 先清洗 token
         token = sanitize_string(credentials.credentials)
 
         session_id = verify_token(token)
@@ -129,10 +133,10 @@ async def get_current_session(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Sanitize session_id before using it
+        # session_id 也要清洗后再入库查询
         session_id = sanitize_string(session_id)
 
-        # Verify session exists in database
+        # 确认会话仍然存在
         session = await db_service.get_session(session_id)
         if session is None:
             logger.error("session_not_found", session_id=session_id)
@@ -142,7 +146,7 @@ async def get_current_session(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Bind user_id to logging context for all subsequent logs in this request
+        # 把 user_id 绑到日志上下文
         bind_context(user_id=session.user_id)
 
         return session
@@ -158,38 +162,38 @@ async def get_current_session(
 @router.post("/register", response_model=UserResponse)
 @limiter.limit(settings.RATE_LIMIT_ENDPOINTS["register"][0])
 async def register_user(request: Request, user_data: UserCreate):
-    """Register a new user.
+    """注册新用户。
 
     Args:
-        request: The FastAPI request object for rate limiting.
-        user_data: User registration data
+        request: FastAPI 请求对象，限流器需要
+        user_data: 注册信息（邮箱、密码、可选用户名）
 
     Returns:
-        UserResponse: The created user info
+        UserResponse: 创建成功的用户信息与访问 token
     """
     try:
-        # Sanitize email
+        # 规范化邮箱
         sanitized_email = sanitize_email(user_data.email)
 
-        # Extract and validate password
+        # 取出密码并校验强度
         password = user_data.password.get_secret_value()
         validate_password_strength(password)
 
-        # Check if user exists
+        # 邮箱不能重复
         if await db_service.get_user_by_email(sanitized_email):
             raise HTTPException(status_code=400, detail="Email already registered")
 
-        # Sanitize optional username
+        # 用户名可选，存在则一并清洗
         sanitized_username = sanitize_string(user_data.username) if user_data.username else None
 
-        # Create user
+        # 落库（密码只存哈希）
         user = await db_service.create_user(
             email=sanitized_email,
             password=User.hash_password(password),
             username=sanitized_username,
         )
 
-        # Create access token
+        # 注册即登录，直接签发 token
         token = create_access_token(str(user.id))
 
         return UserResponse(id=user.id, email=user.email, username=user.username, token=token)
@@ -203,32 +207,36 @@ async def register_user(request: Request, user_data: UserCreate):
 async def login(
     request: Request, email: str = Form(...), password: str = Form(...), grant_type: str = Form(default="password")
 ):
-    """Login a user.
+    """用户登录。
+
+    沿用 OAuth2 的表单字段风格（``grant_type`` / ``username`` / ``password``），
+    方便前端直接用标准表单提交。
 
     Args:
-        request: The FastAPI request object for rate limiting.
-        email: User's email
-        password: User's password
-        grant_type: Must be "password"
+        request: FastAPI 请求对象，限流器需要
+        email: 登录邮箱
+        password: 登录密码
+        grant_type: 必须为 "password"
 
     Returns:
-        TokenResponse: Access token information
+        TokenResponse: 访问 token 及其过期时间
 
     Raises:
-        HTTPException: If credentials are invalid
+        HTTPException: 凭证无效或 grant_type 不受支持
     """
     try:
-        # Sanitize inputs
+        # 清洗输入；邮箱统一小写
         email = sanitize_string(email).lower()
         grant_type = sanitize_string(grant_type)
 
-        # Verify grant type
+        # 只支持密码模式
         if grant_type != "password":
             raise HTTPException(
                 status_code=400,
                 detail="Unsupported grant type. Must be 'password'",
             )
 
+        # 用户不存在与密码错误返回同一个提示，避免暴露账号是否注册
         user = await db_service.get_user_by_email(email)
         if not user or not user.verify_password(password):
             raise HTTPException(
@@ -246,22 +254,22 @@ async def login(
 
 @router.post("/session", response_model=SessionResponse)
 async def create_session(user: User = Depends(get_current_user)):
-    """Create a new chat session for the authenticated user.
+    """为已登录用户新建一个聊天会话。
 
     Args:
-        user: The authenticated user
+        user: 当前已鉴权用户
 
     Returns:
-        SessionResponse: The session ID, name, and access token
+        SessionResponse: 会话 ID、会话名与新签发的会话 token
     """
     try:
-        # Generate a unique session ID
+        # 会话 ID 用 UUID，避免可枚举
         session_id = str(uuid.uuid4())
 
-        # Create session in database, copying username for LLM personalization
+        # 落库时冗余存一份用户名，供后续 LLM 个性化使用
         session = await db_service.create_session(session_id, user.id, username=user.username)
 
-        # Create access token for the session
+        # 会话级别的 token：后续聊天接口用它鉴权
         token = create_access_token(session_id)
 
         logger.info(
@@ -282,30 +290,30 @@ async def create_session(user: User = Depends(get_current_user)):
 async def update_session_name(
     session_id: str, name: str = Form(...), current_session: Session = Depends(get_current_session)
 ):
-    """Update a session's name.
+    """修改会话名称。
 
     Args:
-        session_id: The ID of the session to update
-        name: The new name for the session
-        current_session: The current session from auth
+        session_id: 要修改的会话 ID
+        name: 新名称
+        current_session: 鉴权得到的当前会话
 
     Returns:
-        SessionResponse: The updated session information
+        SessionResponse: 更新后的会话信息与重新签发的 token
     """
     try:
-        # Sanitize inputs
+        # 清洗全部输入
         sanitized_session_id = sanitize_string(session_id)
         sanitized_name = sanitize_string(name)
         sanitized_current_session = sanitize_string(current_session.id)
 
-        # Verify the session ID matches the authenticated session
+        # 只能改自己的会话
         if sanitized_session_id != sanitized_current_session:
             raise HTTPException(status_code=403, detail="Cannot modify other sessions")
 
-        # Update the session name
+        # 更新名称
         session = await db_service.update_session_name(sanitized_session_id, sanitized_name)
 
-        # Create a new token (not strictly necessary but maintains consistency)
+        # 重新签发 token：不是必需，但让客户端拿到的凭证保持一致
         token = create_access_token(sanitized_session_id)
 
         return SessionResponse(session_id=sanitized_session_id, name=session.name, token=token)
@@ -316,25 +324,24 @@ async def update_session_name(
 
 @router.delete("/session/{session_id}")
 async def delete_session(session_id: str, current_session: Session = Depends(get_current_session)):
-    """Delete a session for the authenticated user.
+    """删除会话。
 
     Args:
-        session_id: The ID of the session to delete
-        current_session: The current session from auth
+        session_id: 要删除的会话 ID
+        current_session: 鉴权得到的当前会话
 
     Returns:
         None
     """
     try:
-        # Sanitize inputs
+        # 清洗输入
         sanitized_session_id = sanitize_string(session_id)
         sanitized_current_session = sanitize_string(current_session.id)
 
-        # Verify the session ID matches the authenticated session
+        # 只能删自己的会话
         if sanitized_session_id != sanitized_current_session:
             raise HTTPException(status_code=403, detail="Cannot delete other sessions")
 
-        # Delete the session
         await db_service.delete_session(sanitized_session_id)
 
         logger.info("session_deleted", session_id=session_id, user_id=current_session.user_id)
@@ -345,13 +352,13 @@ async def delete_session(session_id: str, current_session: Session = Depends(get
 
 @router.get("/sessions", response_model=List[SessionResponse])
 async def get_user_sessions(user: User = Depends(get_current_user)):
-    """Get all session IDs for the authenticated user.
+    """列出当前用户的全部会话。
 
     Args:
-        user: The authenticated user
+        user: 当前已鉴权用户
 
     Returns:
-        List[SessionResponse]: List of session IDs
+        List[SessionResponse]: 会话列表，每项都带一个可直接使用的会话 token
     """
     try:
         sessions = await db_service.get_user_sessions(user.id)

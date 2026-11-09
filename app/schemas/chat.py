@@ -1,4 +1,4 @@
-"""This file contains the chat schema for the application."""
+"""聊天相关请求 / 响应模型。"""
 
 import re
 from typing import (
@@ -16,37 +16,37 @@ from app.schemas.base import BaseResponse
 
 
 class Message(BaseModel):
-    """Message model for chat endpoint.
+    """单条消息。
 
     Attributes:
-        role: The role of the message sender (user or assistant).
-        content: The content of the message.
+        role: 角色，user / assistant / system
+        content: 消息正文，1~3000 字
     """
 
     model_config = {"extra": "ignore"}
 
-    role: Literal["user", "assistant", "system"] = Field(..., description="The role of the message sender")
-    content: str = Field(..., description="The content of the message", min_length=1, max_length=3000)
+    role: Literal["user", "assistant", "system"] = Field(..., description="消息发送者的角色")
+    content: str = Field(..., description="消息正文", min_length=1, max_length=3000)
 
     @field_validator("content")
     @classmethod
     def validate_content(cls, v: str) -> str:
-        """Validate the message content.
+        """做一层基础的输入安全校验。
 
         Args:
-            v: The content to validate
+            v: 待校验的正文
 
         Returns:
-            str: The validated content
+            str: 校验通过的正文
 
         Raises:
-            ValueError: If the content contains disallowed patterns
+            ValueError: 正文含脚本标签或空字节
         """
-        # Check for potentially harmful content
+        # 拦截 <script> 标签，避免前端直接渲染时被注入
         if re.search(r"<script.*?>.*?</script>", v, re.IGNORECASE | re.DOTALL):
             raise ValueError("Content contains potentially harmful script tags")
 
-        # Check for null bytes
+        # 拦截空字节，Postgres 与部分解析器不接受
         if "\0" in v:
             raise ValueError("Content contains null bytes")
 
@@ -54,43 +54,47 @@ class Message(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    """Request model for chat endpoint.
+    """对话请求体。
 
     Attributes:
-        messages: List of messages in the conversation.
+        messages: 会话中的消息列表，至少一条
     """
 
     messages: List[Message] = Field(
         ...,
-        description="List of messages in the conversation",
+        description="会话中的消息列表",
         min_length=1,
     )
 
 
 class ChatResponse(BaseResponse):
-    """Response model for chat endpoint.
+    """对话响应体。
 
     Attributes:
-        messages: List of messages in the conversation.
+        messages: 本轮产生的消息列表
     """
 
-    messages: List[Message] = Field(..., description="List of messages in the conversation")
+    messages: List[Message] = Field(..., description="会话中的消息列表")
 
 
 class StreamResponse(BaseResponse):
-    """Response model for streaming chat endpoint.
+    """流式对话的单帧数据。
 
     Attributes:
-        content: The content of the current chunk.
-        done: Whether the stream is complete.
+        content: 本帧的文本增量
+        done: 是否已结束
     """
 
-    content: str = Field(default="", description="The content of the current chunk")
-    done: bool = Field(default=False, description="Whether the stream is complete")
+    content: str = Field(default="", description="本帧的文本内容")
+    done: bool = Field(default=False, description="流是否结束")
 
 
 class SessionTitle(BaseModel):
-    """Structured output schema for session title generation."""
+    """会话标题生成用的结构化输出模型。
+
+    只定义了 ``title`` 一个字段，配合 json_mode 让模型直接吐 JSON，
+    避免多字段时模型自由发挥。
+    """
 
     title: str = Field(
         ...,
@@ -101,6 +105,7 @@ class SessionTitle(BaseModel):
     @field_validator("title")
     @classmethod
     def _normalize(cls, v: str) -> str:
+        """规整模型输出：压空白、去首尾标点，空标题直接报错。"""
         v = " ".join(v.split()).strip(" \"'`.,:;!?-")
         if not v:
             raise ValueError("empty title after normalization")

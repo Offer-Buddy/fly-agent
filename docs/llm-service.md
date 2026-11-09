@@ -1,38 +1,38 @@
-# LLM Service
+# LLM 服务
 
-## Overview
+## 概述
 
-The LLM service (`app/services/llm/`) handles all language model calls with automatic retries, circular model fallback, and a total timeout budget. Your agent code calls `llm_service.call(messages)` — the service handles everything else.
+LLM 服务（`app/services/llm/`）负责所有语言模型调用，内置自动重试、循环模型回退和总超时预算。你的 agent 代码只调用 `llm_service.call(messages)` —— 其余一切由该服务处理。
 
-The package is split into two modules:
+这个包拆成两个模块：
 
-- `app/services/llm/registry.py` — `LLMRegistry`: defines available models
-- `app/services/llm/service.py` — `LLMService`: call logic, retries, fallback, structured output
+- `app/services/llm/registry.py` —— `LLMRegistry`：定义可用模型
+- `app/services/llm/service.py` —— `LLMService`：调用逻辑、重试、回退、结构化输出
 
-## Model registry
+## 模型注册表
 
-Models are defined in `LLMRegistry.LLM_CONFIGS` in order of preference:
+模型按优先级顺序定义在 `LLMRegistry.LLM_CONFIGS` 中：
 
-| Name           | Model        | Notes                              |
+| 名称           | 模型         | 说明                                |
 | -------------- | ------------ | ----------------------------------- |
-| `gpt-5.6-luna` | gpt-5.6-luna | Default. Medium reasoning effort.  |
-| `gpt-5.4`      | gpt-5.4      | Medium reasoning effort.           |
-| `gpt-5.4-mini` | gpt-5.4-mini | Low reasoning effort.              |
-| `gpt-5.4-nano` | gpt-5.4-nano | Fast, low reasoning effort.        |
+| `gpt-5.6-luna` | gpt-5.6-luna | 默认。中等推理强度。                |
+| `gpt-5.4`      | gpt-5.4      | 中等推理强度。                      |
+| `gpt-5.4-mini` | gpt-5.4-mini | 低推理强度。                        |
+| `gpt-5.4-nano` | gpt-5.4-nano | 快，低推理强度。                    |
 
-Set `DEFAULT_LLM_MODEL` in your `.env` to choose the starting model.
+在 `.env` 里设置 `DEFAULT_LLM_MODEL` 来选择起始模型。
 
-Every entry is built through LangChain's `init_chat_model`. A bare `model` name (like the ones above) is inferred as OpenAI, so existing entries and env vars keep working unchanged. To add a model from another provider, prefix `model` with `provider:`, e.g.:
+每个条目都通过 LangChain 的 `init_chat_model` 构建。裸 `model` 名（也就是上面那些）会被推断为 OpenAI，因此现有条目和环境变量都保持原样可用。要添加其他提供方的模型，给 `model` 加上 `provider:` 前缀，例如：
 
 ```python
 {"name": "claude-opus", "model": "anthropic:claude-opus-4-6", "kwargs": {"temperature": 0.2}},
 ```
 
-That provider's LangChain integration package must be installed (`uv sync --extra anthropic`, `--extra ollama`, or `--extra google-genai`) and its API key set via the provider's own env var (e.g. `ANTHROPIC_API_KEY`) — the registry does not manage non-OpenAI credentials itself.
+必须安装该提供方的 LangChain 集成包（`uv sync --extra anthropic`、`--extra ollama` 或 `--extra google-genai`），并通过该提供方自己的环境变量设置 API key（例如 `ANTHROPIC_API_KEY`）—— 注册表本身不管理非 OpenAI 的凭证。
 
-To add or change models, edit `LLMRegistry.LLM_CONFIGS` in `app/services/llm/registry.py`.
+要新增或修改模型，编辑 `app/services/llm/registry.py` 里的 `LLMRegistry.LLM_CONFIGS`。
 
-## Retry and fallback behaviour
+## 重试与回退行为
 
 ```mermaid
 flowchart TD
@@ -58,31 +58,31 @@ flowchart TD
     Try -->|success| Success
 ```
 
-**Retry config** (per model):
+**重试配置**（按模型）：
 
-- Max attempts: `MAX_LLM_CALL_RETRIES` (default: 3)
-- Wait: exponential backoff, 2s min, 10s max
-- Retries on: `openai`'s `RateLimitError`, `APITimeoutError`, `APIError`
+- 最大尝试次数：`MAX_LLM_CALL_RETRIES`（默认：3）
+- 等待：指数退避，最短 2s，最长 10s
+- 触发重试的异常：`openai` 的 `RateLimitError`、`APITimeoutError`、`APIError`
 
-  These are OpenAI-specific exception types. A non-OpenAI registry entry (e.g. `anthropic:claude-opus-4-6`) still gets circular fallback to the next model on any exception, but not the per-model exponential-backoff retry until that provider's error types are added to this tuple too.
+  这些都是 OpenAI 专有的异常类型。非 OpenAI 的注册表条目（例如 `anthropic:claude-opus-4-6`）遇到任何异常时仍会循环回退到下一个模型，但在把该提供方的错误类型加进这个元组之前，不会享受按模型进行的指数退避重试。
 
-**Total timeout**: `LLM_TOTAL_TIMEOUT` seconds (default: 60s) caps the entire loop. Without this, worst case is `retries × models × max_wait` — potentially 2+ minutes.
+**总超时**：`LLM_TOTAL_TIMEOUT` 秒（默认：60s）封顶整个循环。没有它的话，最坏情况是 `retries × models × max_wait` —— 可能超过 2 分钟。
 
-**Fallback order**: circular through `LLMRegistry.LLMS`. After the last model, wraps back to the first and stops after one full cycle.
+**回退顺序**：沿 `LLMRegistry.LLMS` 循环。走完最后一个模型后回到第一个，跑满一轮即停止。
 
-## Tools
+## 工具
 
-Tools are bound to the LLM at startup:
+工具在启动时绑定到 LLM：
 
 ```python
 llm_service.bind_tools(tools)
 ```
 
-When a model is switched during fallback, the tools are re-bound to the new model automatically.
+回退过程中切换模型时，工具会自动重新绑定到新模型。
 
-## Structured output
+## 结构化输出
 
-Pass a Pydantic model as `response_format` to get a validated instance back instead of a raw `BaseMessage`:
+把 Pydantic 模型作为 `response_format` 传入，就能拿回校验后的实例，而不是原始的 `BaseMessage`：
 
 ```python
 from app.schemas.my_schema import MySchema
@@ -95,9 +95,9 @@ result: MySchema = await llm_service.call(
 )
 ```
 
-The service chains `.with_structured_output(schema)` on the resolved model and re-wraps it on every fallback attempt, so retries and model switching work transparently.
+服务会在解析出的模型上链式调用 `.with_structured_output(schema)`，并在每一次回退尝试时重新包装，因此重试和模型切换对调用方完全透明。
 
-## Adding a new model
+## 新增模型
 
 ```python
 # app/services/llm/registry.py — LLMRegistry.LLM_CONFIGS
@@ -111,4 +111,4 @@ The service chains `.with_structured_output(schema)` on the resolved model and r
 },
 ```
 
-Add it at any position in the list. The fallback order follows the list order.
+可以加在列表的任意位置。回退顺序跟随列表顺序。

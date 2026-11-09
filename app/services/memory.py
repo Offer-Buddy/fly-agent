@@ -1,4 +1,8 @@
-"""Long-term memory service using mem0 and pgvector with optional cache layer."""
+"""长期记忆服务：mem0 + pgvector，前面再套一层缓存。
+
+记忆的写入是异步的（不阻塞对话响应），读取则先查缓存、未命中再查向量库。
+匿名会话（无 user_id）直接跳过长期记忆，避免所有匿名用户挤进同一个分区。
+"""
 
 from langchain_core.messages import BaseMessage
 from mem0 import AsyncMemory
@@ -14,14 +18,32 @@ from app.utils import latest_user_text
 
 
 class MemoryService:
-    """Service for managing long-term memory using mem0 and pgvector."""
+    """基于 mem0 与 pgvector 的长期记忆服务。"""
 
     def __init__(self):
-        """Initialize the memory service."""
+        """初始化记忆服务（此时尚未建立连接）。"""
         self._memory: AsyncMemory | None = None
 
     async def _get_memory(self) -> AsyncMemory:
+        """获取（首次调用时构建）mem0 的 AsyncMemory 实例。
+
+        向量模型允许挂在和对话模型不同的 OpenAI 兼容端点上：
+        有些供应商（如 DeepSeek）没有 embeddings 接口。
+
+        Returns:
+            AsyncMemory: mem0 记忆客户端
+        """
         if self._memory is None:
+            embedder_config: dict = {
+                "model": settings.LONG_TERM_MEMORY_EMBEDDER_MODEL,
+                "embedding_dims": settings.LONG_TERM_MEMORY_EMBEDDING_DIMS,
+            }
+            # 向量模型可以走独立端点（部分供应商不提供 embeddings 接口）
+            if settings.LONG_TERM_MEMORY_EMBEDDER_BASE_URL:
+                embedder_config["openai_base_url"] = settings.LONG_TERM_MEMORY_EMBEDDER_BASE_URL
+            if settings.LONG_TERM_MEMORY_EMBEDDER_API_KEY:
+                embedder_config["api_key"] = settings.LONG_TERM_MEMORY_EMBEDDER_API_KEY
+
             self._memory = await AsyncMemory.from_config(
                 config_dict={
                     "vector_store": {
@@ -33,6 +55,7 @@ class MemoryService:
                             "password": settings.POSTGRES_PASSWORD,
                             "host": settings.POSTGRES_HOST,
                             "port": settings.POSTGRES_PORT,
+                            "embedding_model_dims": settings.LONG_TERM_MEMORY_EMBEDDING_DIMS,
                         },
                     },
                     "llm": {
@@ -41,35 +64,39 @@ class MemoryService:
                     },
                     "embedder": {
                         "provider": "openai",
-                        "config": {"model": settings.LONG_TERM_MEMORY_EMBEDDER_MODEL},
+                        "config": embedder_config,
                     },
+                    # 自定义「事实抽取」提示词，约束 mem0 提取什么、以什么格式写
                     "custom_fact_extraction_prompt": load_memory_capture_prompt(),
                 }
             )
         return self._memory
 
     async def initialize(self) -> None:
-        """Pre-warm the mem0 AsyncMemory instance and its pgvector connection pool.
+        """预热 mem0 实例与 pgvector 连接池。
 
-        Call once at startup so the first search() or add() doesn't pay the
-        ~130ms from_config + pgvector.list_cols() cold-init cost.
+        在应用启动时调用一次，避免首次 search() / add() 多付
+        约 130ms 的 from_config + 表结构检查开销。
         """
         await self._get_memory()
         logger.info("memory_service_initialized")
 
     async def search(self, user_id: str | None, query: str) -> str:
-        """Search relevant memories for a user.
+        """检索某个用户的相关记忆。
 
-        Checks cache first; on miss, queries mem0 and caches the result.
+        先查缓存，未命中再查 mem0，并把结果写回缓存。
 
-        Returns formatted memory string, or empty string on failure or when
-        no user_id is supplied (anonymous sessions skip long-term memory
-        rather than pooling under a shared partition).
+        Args:
+            user_id: 用户 ID；为 ``None`` 时直接返回空串
+            query: 检索用的查询文本
+
+        Returns:
+            格式化后的记忆字符串；失败或匿名会话返回空串
         """
         if user_id is None:
             return ""
         try:
-            # Check cache first
+            # 先查缓存
             key = cache_key("memory", str(user_id), query)
             cached = await cache_service.get(key)
             if cached is not None:
@@ -80,7 +107,7 @@ class MemoryService:
             results = await memory.search(user_id=str(user_id), query=query)
             result = "\n".join([f"* {r['memory']}" for r in results["results"]])
 
-            # Cache successful results
+            # 只缓存成功且非空的检索结果
             if result:
                 await cache_service.set(key, result)
 
@@ -90,13 +117,15 @@ class MemoryService:
             return ""
 
     async def add(self, user_id: str | None, messages: list[BaseMessage]) -> None:
-        """Add the latest user turn to long-term memory.
+        """把最近一轮用户发言写入长期记忆。
 
-        Only the latest user message is forwarded to mem0. The assistant reply
-        is deliberately excluded: mem0's extractor concatenates both roles and
-        paraphrases the assistant's suggestions as if the user had volunteered
-        them, producing noisy facts. No-op when ``user_id`` is ``None`` (see
-        ``search`` for rationale).
+        只取最后一条用户消息。助手回复被刻意排除：mem0 的抽取器会把两个角色
+        的内容拼在一起，把助手的建议当成用户自己说过的偏好，产出噪声事实。
+        ``user_id`` 为 ``None`` 时直接跳过（原因见 ``search``）。
+
+        Args:
+            user_id: 用户 ID
+            messages: 本轮对话的全部消息
         """
         if user_id is None:
             return

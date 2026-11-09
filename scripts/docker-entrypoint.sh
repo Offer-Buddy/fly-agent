@@ -1,54 +1,79 @@
 #!/bin/bash
+# =============================================================================
+# 容器入口脚本
+# =============================================================================
+# 职责（按执行顺序）：
+#   1. 打印启动前的环境概况（仅有/无，不泄露具体值）
+#   2. 从 .env.${APP_ENV}（或 .env）加载变量，且「已存在的环境变量优先」
+#   3. 校验必需密钥，缺失则直接退出（快速失败优于带病启动）
+#   4. 打印最终配置摘要
+#   5. exec 交给 CMD 指定的进程
+#
+# 为什么第 5 步必须用 exec：exec 会用目标进程替换当前 shell，
+# 让 uvicorn 成为容器 PID 1，从而能正确接收 docker stop 发出的 SIGTERM，
+# 走优雅关闭；如果只是普通调用，shell 会吞掉信号，容器只能等超时被强杀。
+# =============================================================================
 set -e
 
-# Print initial environment values (before loading .env)
-echo "Starting with these environment variables:"
-echo "APP_ENV: ${APP_ENV:-development}"
-echo "Initial Database Host: $( [[ -n ${POSTGRES_HOST:-${DB_HOST:-}} ]] && echo 'set' || echo 'Not set' )"
-echo "Initial Database Port: $( [[ -n ${POSTGRES_PORT:-${DB_PORT:-}} ]] && echo 'set' || echo 'Not set' )"
-echo "Initial Database Name: $( [[ -n ${POSTGRES_DB:-${DB_NAME:-}} ]] && echo 'set' || echo 'Not set' )"
-echo "Initial Database User: $( [[ -n ${POSTGRES_USER:-${DB_USER:-}} ]] && echo 'set' || echo 'Not set' )"
+# -----------------------------------------------------------------------------
+# 1. 加载前的环境概况
+# -----------------------------------------------------------------------------
+# 只回答「有没有设置」，不打印具体值 —— 容器日志经常被集中采集，
+# 打印连接串等于把密码写到日志平台里。
+echo "启动前的环境变量："
+echo "APP_ENV：${APP_ENV:-development}"
+echo "数据库主机：$( [[ -n ${POSTGRES_HOST:-${DB_HOST:-}} ]] && echo '已设置' || echo '未设置' )"
+echo "数据库端口：$( [[ -n ${POSTGRES_PORT:-${DB_PORT:-}} ]] && echo '已设置' || echo '未设置' )"
+echo "数据库名：$( [[ -n ${POSTGRES_DB:-${DB_NAME:-}} ]] && echo '已设置' || echo '未设置' )"
+echo "数据库用户：$( [[ -n ${POSTGRES_USER:-${DB_USER:-}} ]] && echo '已设置' || echo '未设置' )"
 
-# Load environment variables from the appropriate .env file
+# -----------------------------------------------------------------------------
+# 2. 从 env 文件加载（已存在的变量不覆盖）
+# -----------------------------------------------------------------------------
+# 优先 .env.${APP_ENV}，回退 .env。
+# 关键点：docker-compose 的 environment / --env-file 已经注入的变量优先级更高，
+# 这里只用来「补上文件里有、但环境里没有」的项，绝不覆盖。
+# 这也是为什么不能用 `source`：source 会把文件里的值直接盖掉已有变量。
 if [ -f ".env.${APP_ENV}" ]; then
-    echo "Loading environment from .env.${APP_ENV}"
+    echo "正在从 .env.${APP_ENV} 加载环境变量"
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip comments and empty lines
+        # 跳过注释行（允许行首有空白）与空行
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$line" ]] && continue
 
-        # Extract the key
+        # 取出等号左边的键名，用于判断该变量是否已存在
         key=$(echo "$line" | cut -d '=' -f 1)
 
-        # Only set if not already set in environment
+        # ${!key} 是 bash 的「间接引用」：用变量 key 的值作为变量名取值
         if [[ -z "${!key}" ]]; then
             export "$line"
         else
-            echo "Keeping existing value for $key"
+            echo "保留已存在的 $key（不使用文件中的值）"
         fi
     done <".env.${APP_ENV}"
 elif [ -f ".env" ]; then
-    echo "Loading environment from .env"
+    echo "正在从 .env 加载环境变量"
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip comments and empty lines
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$line" ]] && continue
 
-        # Extract the key
         key=$(echo "$line" | cut -d '=' -f 1)
 
-        # Only set if not already set in environment
         if [[ -z "${!key}" ]]; then
             export "$line"
         else
-            echo "Keeping existing value for $key"
+            echo "保留已存在的 $key（不使用文件中的值）"
         fi
     done <".env"
 else
-    echo "Warning: No .env file found. Using system environment variables."
+    echo "警告：没有找到任何 env 文件，将只使用系统环境变量。"
 fi
 
-# Check required sensitive environment variables
+# -----------------------------------------------------------------------------
+# 3. 必需变量校验
+# -----------------------------------------------------------------------------
+# 这两个缺任何一个，应用要么起不来（缺 OPENAI_API_KEY 时 LLM 客户端初始化失败），
+# 要么带着一个不安全的 JWT 密钥跑起来 —— 后者更危险，所以必须拦住。
 required_vars=("JWT_SECRET_KEY" "OPENAI_API_KEY")
 missing_vars=()
 
@@ -59,27 +84,34 @@ for var in "${required_vars[@]}"; do
 done
 
 if [[ ${#missing_vars[@]} -gt 0 ]]; then
-    echo "ERROR: The following required environment variables are missing:"
+    echo "错误：缺少以下必需的环境变量："
     for var in "${missing_vars[@]}"; do
         echo "  - $var"
     done
-    echo "Please provide these variables through environment or .env files."
+    echo "请通过环境变量或 env 文件提供这些变量。"
     exit 1
 fi
 
-# Print final environment info
-echo -e "\nFinal environment configuration:"
-echo "Environment: ${APP_ENV:-development}"
+# -----------------------------------------------------------------------------
+# 4. 最终配置摘要（同样不打印密钥）
+# -----------------------------------------------------------------------------
+echo -e "\n最终环境配置："
+echo "环境：${APP_ENV:-development}"
 
-echo "Database Host: $( [[ -n ${POSTGRES_HOST:-${DB_HOST:-}} ]] && echo 'set' || echo 'Not set' )"
-echo "Database Port: $( [[ -n ${POSTGRES_PORT:-${DB_PORT:-}} ]] && echo 'set' || echo 'Not set' )"
-echo "Database Name: $( [[ -n ${POSTGRES_DB:-${DB_NAME:-}} ]] && echo 'set' || echo 'Not set' )"
-echo "Database User: $( [[ -n ${POSTGRES_USER:-${DB_USER:-}} ]] && echo 'set' || echo 'Not set' )"
+echo "数据库主机：$( [[ -n ${POSTGRES_HOST:-${DB_HOST:-}} ]] && echo '已设置' || echo '未设置' )"
+echo "数据库端口：$( [[ -n ${POSTGRES_PORT:-${DB_PORT:-}} ]] && echo '已设置' || echo '未设置' )"
+echo "数据库名：$( [[ -n ${POSTGRES_DB:-${DB_NAME:-}} ]] && echo '已设置' || echo '未设置' )"
+echo "数据库用户：$( [[ -n ${POSTGRES_USER:-${DB_USER:-}} ]] && echo '已设置' || echo '未设置' )"
 
-echo "LLM Model: ${DEFAULT_LLM_MODEL:-Not set}"
-echo "Debug Mode: ${DEBUG:-false}"
+echo "LLM 模型：${DEFAULT_LLM_MODEL:-未设置}"
+echo "调试模式：${DEBUG:-false}"
 
-# Run migrations if necessary with `make docker-migrate`.
+# 数据库迁移刻意不在这里自动执行：
+#   多副本同时启动时，几个实例会并发抢同一把迁移锁，容易死锁或重复执行。
+# 需要时显式执行 `make docker-migrate`（在容器内跑 alembic upgrade head）。
 
-# Execute the CMD
+# -----------------------------------------------------------------------------
+# 5. 交接给 CMD
+# -----------------------------------------------------------------------------
+# "$@" 就是 Dockerfile 里 CMD 的内容；exec 让它替换当前 shell 成为 PID 1。
 exec "$@"
