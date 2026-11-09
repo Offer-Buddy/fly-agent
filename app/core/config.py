@@ -326,10 +326,12 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: CSVList = ["*"]
 
     # ---- 可观测性：Langfuse ----
+    # Langfuse 由外部独立部署，这里只描述「往哪发」。默认值按本机自建实例的常用端口，
+    # 走云端就显式设成 https://cloud.langfuse.com。
     LANGFUSE_TRACING_ENABLED: bool = True
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
-    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    LANGFUSE_HOST: str = "http://localhost:3010"
 
     # ---- 大模型 ----
     OPENAI_API_KEY: str = ""

@@ -278,7 +278,7 @@ s = Settings(_env_file=None)                       # 不读项目 env 文件
 | `LANGFUSE_TRACING_ENABLED` | bool | `true` | 关掉可完全停止链路追踪 |
 | `LANGFUSE_PUBLIC_KEY` | str | 空 | |
 | `LANGFUSE_SECRET_KEY` | str | 空 | |
-| `LANGFUSE_HOST` | str | `https://cloud.langfuse.com` | 支持自建 |
+| `LANGFUSE_HOST` | str | `http://localhost:3010` | 你自建实例的地址；走云端则设为 `https://cloud.langfuse.com` |
 | `EVALUATION_LLM` | str | `gpt-5` | `make eval` 打分用模型 |
 | `EVALUATION_BASE_URL` | str | `https://api.openai.com/v1` | |
 | `EVALUATION_API_KEY` | str | 空 | 为空则用 `OPENAI_API_KEY` |

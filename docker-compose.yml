@@ -6,8 +6,8 @@
 #   make docker-down    # 停全部服务
 #   make docker-logs    # 跟日志
 #
-# 监控栈（Prometheus / Grafana / cadvisor）已移除；LLM 链路追踪走自建 Langfuse，
-# 见 docker-compose.langfuse.yml 与 `make langfuse-up`。
+# 监控栈（Prometheus / Grafana / cadvisor）已移除；LLM 链路追踪由外部独立部署的
+# Langfuse 承担，本项目只读 .env 里的 LANGFUSE_HOST 与 key，不负责它的起停。
 #
 # 直接调 compose 时要自己带环境文件，否则 ${POSTGRES_USER} 之类会解析成空：
 #   APP_ENV=development docker-compose --env-file .env.development up -d
@@ -109,11 +109,16 @@ services:
       # 用 1 号库，避开其他服务可能占用的 0 号库，防止 key 互相覆盖
       # （compose 起的 redis 是共享实例，不是这个项目独占的）
       - REDIS_DB=1
-      # 自建 Langfuse 是另一个 compose 项目（fly-agent-langfuse），通过共享网络
-      # fly-agent-net 直连，所以这里必须用服务名而不是 localhost——容器里的
-      # localhost 指 app 自己。宿主机直跑（make dev）时读 .env 的 localhost:3010，
-      # 不经过这个覆盖。想改指向别的实例就设 LANGFUSE_HOST_INTERNAL。
-      - LANGFUSE_HOST=${LANGFUSE_HOST_INTERNAL:-http://langfuse-web:3000}
+      # Langfuse 由外部独立部署（不在本编排里）。容器内的 localhost 指 app 自己，
+      # 所以默认改走 host.docker.internal 打到宿主机上的实例；端口按你的部署改。
+      #   宿主机 published 端口         → 保持默认 http://host.docker.internal:3010
+      #   app 与 Langfuse 同网络        → 设 LANGFUSE_HOST_INTERNAL=http://langfuse-web:3000
+      #   Langfuse 在别的机器           → 设 LANGFUSE_HOST_INTERNAL=http://<ip>:3000
+      - LANGFUSE_HOST=${LANGFUSE_HOST_INTERNAL:-http://host.docker.internal:3010}
+    # Linux 宿主不会自带 host.docker.internal 解析；Docker Desktop（Win/Mac）自带，
+    # 这行在那边是无害的重复声明。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         # 等到健康检查通过再启动，否则应用会在启动瞬间连不上库而崩溃重启
@@ -137,7 +142,7 @@ services:
   # 监控与可视化
   # ---------------------------------------------------------------------------
   # 原 Prometheus + Grafana + cadvisor 三件套已移除：
-  #   LLM 侧观测由自建 Langfuse 负责（docker-compose.langfuse.yml），
+  #   LLM 侧观测由外部部署的 Langfuse 负责（只配 .env，不在本编排内），
   #   请求侧观测由 structlog 的 http_request_completed 日志负责。
   #   要接回指标栈时，再加服务并让 app 暴露 /metrics 即可。
 
@@ -146,9 +151,9 @@ services:
 # 好处是服务名即主机名（app、db、redis 可直接互相访问），
 # 且与宿主机上其他 compose 项目的网络隔离，不会串台。
 #
-# 网络名显式固定为 fly-agent-net：自建 Langfuse 是另一个 compose 项目，
-# 它用 external 方式加入本网络，才能让 app 容器解析到 langfuse-web。
-# 不写死名字的话，网络会随目录名变成 <目录名>_app-net，改名即断。
+# 网络名显式固定为 fly-agent-net：不随目录改名漂移。
+# 若外部 Langfuse 也跑在 compose 里、想用服务名直连，把它 join 到本网络，
+# 再把 LANGFUSE_HOST_INTERNAL 指过去即可；默认不依赖它。
 networks:
   app-net:
     name: fly-agent-net

@@ -6,7 +6,7 @@
 - [uv](https://docs.astral.sh/uv/) — `pip install uv`
 - Docker + Docker Compose（本地开发推荐）
 - OpenAI API 密钥
-- Langfuse 账号（可选 —— 设 `LANGFUSE_TRACING_ENABLED=false` 可跳过）
+- Langfuse 实例（可选 —— 自建或云端；没有就设 `LANGFUSE_TRACING_ENABLED=false` 跳过）
 
 ## 方式 A：Docker（推荐）
 

@@ -10,27 +10,17 @@ graph TB
         redis["redis\n(Redis, 6379)"]
     end
 
-    subgraph lf["Langfuse 栈（make langfuse-up）"]
-        web["langfuse-web\n(3010)"]
-        worker["langfuse-worker"]
-        lfpg["postgres\n(5433)"]
-        ch["clickhouse\n(8123 / 9300)"]
-        lfredis["redis\n(6380)"]
-        minio["minio\n(9092 / 9093)"]
-    end
+    lf["Langfuse\n（外部部署，不在本编排内）"]
 
     app --> db
     app -.->|"可选缓存\n(set REDIS_HOST=redis)"| redis
-    app -->|"traces\nhttp://langfuse-web:3000"| web
-    web --> lfpg
-    web --> ch
-    web --> lfredis
-    web --> minio
-    worker --> lfpg
+    app -->|"traces\nhost.docker.internal:3010"| lf
 ```
 
-两套栈通过共享网络 `fly-agent-net` 互通：开发栈创建它，Langfuse 栈以 external 方式加入。
-所以 app 容器能用服务名 `langfuse-web` 访问追踪服务，宿主机侧浏览器走 `localhost:3010`。
+**Langfuse 不在这份编排里。** 它由你单独部署（自己的 compose、内网服务或云端），
+本仓库只负责把 trace 发过去：在 `.env` 里填 `LANGFUSE_HOST` 与 `pk-` / `sk-` 即可。
+app 容器内的默认值是 `http://host.docker.internal:3010`（容器里的 `localhost` 指容器自己），
+Langfuse 在别的地址就用 `LANGFUSE_HOST_INTERNAL` 覆盖。详见[可观测性](observability.md)。
 
 Redis 始终会启动，但只有在 `.env` 文件中设置了 `REDIS_HOST=redis` 时，应用才会真正使用它。未设置时，应用回退到内存缓存。
 
@@ -76,19 +66,17 @@ cp .env.example .env.staging
 cp .env.example .env.production
 ```
 
-`make docker-up` 命令通过 `--env-file` 把环境变量文件传给 Docker Compose。Docker 环境变量文件中务必设置 `POSTGRES_HOST=db`（而不是 `localhost`）—— Compose 网络内该服务的名称就是 `db`。`LANGFUSE_HOST` 无需手改，编排文件已覆盖为 `http://langfuse-web:3000`。
+`make docker-up` 命令通过 `--env-file` 把环境变量文件传给 Docker Compose。Docker 环境变量文件中务必设置 `POSTGRES_HOST=db`（而不是 `localhost`）—— Compose 网络内该服务的名称就是 `db`。
 
-## Langfuse（自建追踪栈）
+`LANGFUSE_HOST` 无需手改：编排会把容器内的值覆盖成 `http://host.docker.internal:3010`（打到宿主机上的实例）。Langfuse 不在宿主机 3010 端口时，用 `LANGFUSE_HOST_INTERNAL` 覆盖一次即可。
+
+## Langfuse
+
+Langfuse 由外部独立部署，本编排不包含它，也没有对应的 Makefile 目标。接上它只需要两步：
+
+1. 在你那套 Langfuse 的项目设置里取 `pk-` / `sk-`，填进 `.env.development`
+2. 把 `LANGFUSE_HOST` 改成它实际监听的地址，`LANGFUSE_TRACING_ENABLED=true`
 
 ```bash
-make langfuse-up ENV=development    # 起 Web + Worker + Postgres + ClickHouse + Redis + MinIO
-make langfuse-logs                  # 跟 web / worker 日志
-make langfuse-down                  # 停栈（数据卷保留）
+make trace-smoke     # 造一条探针 trace，确认 key 通、数据到、界面能看到
 ```
-
-启动后访问 [http://localhost:3010](http://localhost:3010)，首屏建组织与项目，在项目设置里
-取 `pk-` / `sk-` 填进 `.env.development` 的 `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`，
-再把 `LANGFUSE_TRACING_ENABLED` 置为 `true`。
-
-首次启动需要 1~2 分钟建表；常驻内存约 1.5~2GB。端口全部避让开发栈（见上方拓扑图）。
-清空数据用 `docker compose -f docker-compose.langfuse.yml down -v`。

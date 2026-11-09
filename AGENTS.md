@@ -15,7 +15,7 @@ make eval                 # Run LLM evals (interactive)
 make eval-quick           # Run LLM evals (default settings)
 make migrate              # Run DB migrations to latest (Alembic)
 make docker-up            # Docker: API + DB + Redis (ENV=development by default)
-make langfuse-up          # Self-hosted Langfuse stack (traces UI on :3010)
+make trace-smoke          # Verify Langfuse connectivity (external instance)
 ```
 
 > 所有 server/DB/Docker 目标均接受 `ENV=development|staging|production|test`。
@@ -48,10 +48,9 @@ scripts/           # Environment setup, Docker build scripts
 这是一个可投入生产的 AI Agent 应用，技术栈如下：
 - **LangGraph**：用于有状态、多步骤的 AI Agent 工作流
 - **FastAPI**：用于高性能异步 REST API 端点
-- **Langfuse**：用于 LLM 可观测性与链路追踪
+- **Langfuse**：用于 LLM 可观测性与链路追踪（外部独立部署，本仓库不负责起停，只读 `.env` 配置）
 - **PostgreSQL + pgvector**：用于长期记忆存储（mem0ai）
 - **JWT 认证**：配合会话管理
-- **自建 Langfuse**：LLM 链路追踪与可视化（`make langfuse-up`）
 
 ## 速查：关键规则
 

@@ -140,19 +140,8 @@ trace-smoke:
 trace-report:
 	@$(call run_with_env,uv run python scripts/trace_report.py --hours $(HOURS))
 
-# 自建 Langfuse 全栈（web + worker + postgres + clickhouse + redis + minio）
-# 端口：web 3010、minio 9092/9093、pg 5433、redis 6380、clickhouse 8123/9300
-# 它用 external 网络 fly-agent-net 接入开发栈，所以这里先确保网络存在（幂等）
-langfuse-up:
-	@docker network create fly-agent-net 2>/dev/null || true
-	@$(DOCKER_COMPOSE) -f docker-compose.langfuse.yml up -d
-	@echo "Langfuse 界面：http://localhost:3010（首次启动要等 1~2 分钟建表）"
-
-langfuse-down:
-	@$(DOCKER_COMPOSE) -f docker-compose.langfuse.yml down
-
-langfuse-logs:
-	@$(DOCKER_COMPOSE) -f docker-compose.langfuse.yml logs -f langfuse-web langfuse-worker
+# Langfuse 由外部独立部署，本仓库不负责起停：只在 .env 里填 LANGFUSE_HOST +
+# 公钥私钥即可。上面两个目标都只读配置，指向哪套实例都成立。
 
 # ---------------------------------------------------------------------------
 # 代码质量
@@ -261,9 +250,7 @@ help:
 	@echo "可观测性（Langfuse）："
 	@echo "  trace-smoke              链路自检，确认数据能上报"
 	@echo "  trace-report             追踪报表（HOURS=24 可改窗口）"
-	@echo "  langfuse-up              起一套自建 Langfuse（端口 3010）"
-	@echo "  langfuse-down            停掉自建 Langfuse"
-	@echo "  langfuse-logs            查看自建 Langfuse 日志"
+	@echo "  （Langfuse 由外部独立部署，本项目只读 .env 配置）"
 	@echo ""
 	@echo "代码质量："
 	@echo "  lint                     Ruff 静态检查"
@@ -290,7 +277,7 @@ help:
 .PHONY: install dev staging prod _serve \
         migrate migration migrate-downgrade migrate-history \
         eval eval-quick eval-no-report \
-        trace-smoke trace-report langfuse-up langfuse-down langfuse-logs \
+        trace-smoke trace-report \
         lint format typecheck check pre-commit pre-commit-update settings-check \
         docker-build docker-up docker-down docker-logs docker-migrate \
         docker-migrate-downgrade docker-migrate-history \

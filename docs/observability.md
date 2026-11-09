@@ -25,36 +25,33 @@ graph LR
 - 单次调用和单个会话的延迟
 - 模型名、temperature 及其他参数
 
-**配置（自建，默认形态）：**
-
-```bash
-make langfuse-up      # 起 Web + Worker + Postgres + ClickHouse + Redis + MinIO
-# 打开 http://localhost:3010，首屏建组织与项目，在项目设置里复制 pk-/sk-
-```
+**本仓库不部署 Langfuse**。你那套实例（自己写的 compose、公司内网、云上）单独跑，
+本项目只负责把 trace 发过去——填地址和 key 就够了：
 
 ```bash
 LANGFUSE_TRACING_ENABLED=true
 LANGFUSE_PUBLIC_KEY=pk-...
 LANGFUSE_SECRET_KEY=sk-...
-LANGFUSE_HOST=http://localhost:3010        # 宿主机直跑（make dev）
+LANGFUSE_HOST=http://localhost:3010        # 换成你实际的地址与端口
 ```
 
-**容器内跑 app 时不用改这行。** `docker-compose.yml` 会把 `LANGFUSE_HOST` 覆盖成
-`http://langfuse-web:3000`——容器里的 `localhost` 指 app 自己，必须走服务名。
-两个 compose 项目共用一个网络 `fly-agent-net`（主栈创建，Langfuse 栈以 external 方式加入），
-所以 `langfuse-web` 这个名字在 app 容器里可解析。
+key 在你那套 Langfuse 的「项目 → Settings → API Keys」里取。
 
-| 场景 | app 在哪 | Langfuse 地址 |
+**app 换位置跑时，地址要跟着换：**
+
+| app 跑在哪 | `LANGFUSE_HOST` 填什么 | 说明 |
 | --- | --- | --- |
-| 本地开发（推荐） | `make dev` 宿主机 | `http://localhost:3010` |
-| 容器编排 | `make docker-up` | `http://langfuse-web:3000`（自动覆盖） |
-| 云端 | 任意 | `https://cloud.langfuse.com` |
+| 宿主机 `make dev` | `http://localhost:<端口>` | 直连，最简单 |
+| 容器 `make docker-up` | 不用改 `.env` | 编排自动覆盖成 `http://host.docker.internal:<同一端口>` |
+| app 与 Langfuse 同网络 | `LANGFUSE_HOST_INTERNAL=http://langfuse-web:3000` | 把 app 接进 Langfuse 的网络后用服务名 |
+| Langfuse 在别的机器 | `LANGFUSE_HOST_INTERNAL=http://<ip>:<端口>` | 容器内覆盖，宿主机侧同时改 `.env` |
+| 云端 Hobby | `https://cloud.langfuse.com` | 免费额度 5 万 units/月 |
 
-**端口占用（自建全套）：** Web `3010`、Worker `3030`、Postgres `5433`、Redis `6380`、
-ClickHouse `8123`/`9300`、MinIO `9092`（控制台 `9093`）。全部只绑本机或已避开主栈端口。
+> 容器里的 `localhost` 指 app 自己，这是唯一一个容易踩的坑。默认的
+> `host.docker.internal` 在 Docker Desktop（Windows / macOS）上开箱可用；
+> compose 里已加 `extra_hosts: host-gateway`，Linux 宿主也能解析。
 
-**首次启动要等 1~2 分钟**建表；内存占用约 1.5~2GB。只想先看效果，把 `LANGFUSE_HOST`
-指向云端 Hobby 即可（免费额度 5 万 units/月）。
+端口、数据卷、版本升级都是你那套部署的事，本仓库不管。
 
 **临时关闭：**
 
@@ -80,9 +77,6 @@ make trace-report HOURS=24    # 把最近一段时间的量、成本、延迟聚
 ```
 
 命令行脚本跑完就退出，不调 `flush()` 会丢掉缓冲区里的追踪——`observability.flush()` 就是给脚本用的。
-
-**运维：** `make langfuse-down` 停栈，`make langfuse-logs` 跟 Web/Worker 日志。
-清空全部追踪数据用 `docker compose -f docker-compose.langfuse.yml down -v`（连数据卷一起删，慎用）。
 
 追踪数据同时也是[评测框架](evaluation.md)的数据源。
 
