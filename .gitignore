@@ -37,6 +37,10 @@ htmlcov/
 # 内容稿的中间版本（课程 HTML 反复改版会留下 .bak）
 *.bak.html
 
+# docs 目录整体脱管：文档与课程稿只在本地维护，不进版本库
+# 注意：本规则只对未跟踪文件生效；已入库的文件需 git rm --cached 才会真正退出跟踪
+docs/
+
 # Misc
 *.ipynb
 
