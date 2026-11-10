@@ -41,6 +41,12 @@ htmlcov/
 # 注意：本规则只对未跟踪文件生效；已入库的文件需 git rm --cached 才会真正退出跟踪
 docs/
 
+# archify 绘图技能的原子发布临时产物（交付锁 / 暂存 / 溯源 / 对比 / 交付中间态）
+# 正常流程自行清理，异常中断时会残留 .archify-* 或 .archify-xxx/ 目录
+.archify
+.archify-*
+*.finalize-summary.json
+
 # Misc
 *.ipynb
 
