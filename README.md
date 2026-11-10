@@ -13,8 +13,57 @@
 - **LLM 服务**：指数退避重试 + 循环模型降级 + 总超时预算
 - **Langfuse** 追踪覆盖全部 LLM 调用（外部独立部署，本仓库只填地址与 key）
 - **JWT 认证**与会话管理；基于 slowapi 的限流
-- **Alembic** 迁移；可选的 Redis 缓存层（没配 Redis 时自动降级为内存缓存）
+- **Alembic** 迁移；可选的 Redis（缓存与限流计数共用，未配置时分别退化为进程内缓存与内存计数）
 - **结构化日志**，每行都带 request_id / session_id / user_id
+
+## 技术栈
+
+一句话：**Python 3.13 + FastAPI + LangGraph；数据层 PostgreSQL（pgvector，必需）+ Redis（可选）；追踪走 Langfuse。**
+
+### 分层选型
+
+| 层 | 选型 | 版本约束 | 在本项目里承担什么 |
+|---|---|---|---|
+| 运行时 | Python / uv | `>=3.13`（Docker 用 `python:3.13.2-slim`） | uv 管依赖，`uv.lock` 锁版本，CI 与镜像走 `--frozen` |
+| Web | FastAPI · Uvicorn | `>=0.121.0` · `>=0.34.0` | 异步 REST + SSE 流式响应；Linux 上自动启用 uvloop，Windows 无轮子故排除 |
+| 表单/上传 | python-multipart | `>=0.0.20` | 解析表单与文件上传 |
+| 校验与配置 | Pydantic v2 · pydantic-settings · email-validator | `>=2.11.1` · `>=2.8.1` | 请求体校验、`EmailStr`、`.env` → Settings 类型解析 |
+| Agent 编排 | LangGraph · langgraph-checkpoint-postgres | `>=1.0.2` · `>=3.0.1` | `StateGraph` + `Command` 流转；检查点落 PostgreSQL |
+| LLM 调用 | LangChain · langchain-core · langchain-openai | `>=1.0.5` · `>=1.0.4` · `>=1.0.2` | 统一模型接口；OpenAI 兼容协议，DeepSeek / DashScope 直接复用 |
+| 内置工具 | langchain-community · ddgs | `>=0.4.1` · `>=9.6.0` | 联网搜索（DuckDuckGo，取前 10 条结果） |
+| LLM 可靠性 | tenacity | `>=9.1.2` | 指数退避重试 + 循环模型降级 + 总超时预算 |
+| 数据库 | PostgreSQL + pgvector | Docker 镜像 `pgvector/pgvector:pg16` | 业务表、检查点表、向量表三者同库 |
+| ORM / 驱动 | SQLModel · psycopg2-binary · psycopg[binary] | `>=0.0.25` · `>=2.9.10` · `>=3.3.2` | 业务表走 SQLModel 同步 Session（psycopg2）；LangGraph 检查点走 psycopg3 异步连接池 |
+| 迁移 | Alembic | `>=1.18.4` | `make migrate` 升到最新版本 |
+| 缓存 | Redis · redis.asyncio | `>=7.4.0` | 分布式 TTL 缓存；未配置则降级为进程内缓存（默认 ttl 60s） |
+| 限流 | slowapi | `>=0.1.9` | 按客户端 IP 计数；Redis 作存储后端，多副本共享额度 |
+| 长期记忆 | mem0ai + pgvector | `>=1.0.0` | 进程内自托管，语义记忆存 PostgreSQL，无需 mem0 云账号 |
+| 认证 | python-jose[cryptography] · passlib[bcrypt] · bcrypt | `>=3.4.0` · `>=1.7.4` · `>=4.3.0` | JWT 签发校验 + 密码哈希 |
+| 可观测 | Langfuse · structlog · asgi-correlation-id | `==3.9.1` · `>=25.2.0` · `>=4.3.4` | 追踪全部 LLM 调用；结构化日志带 request_id 串联全链路 |
+| 终端输出 | rich | `>=15.0.0` | 表格 / 面板 / 进度条格式化 |
+| 质量门禁 | ruff · pyright · pre-commit · detect-secrets | `>=0.11.4` · `>=1.1.390` · `>=4.5.1` · `>=1.5.0` | lint + 格式、standard 模式类型检查、提交前钩子、密钥扫描 |
+| 测试 | pytest · httpx | `>=8.3.5` · `>=0.28.1` | 见 pyproject 的 pytest 段；**尚未落地测试用例**，依赖组先备好 |
+| 评测 | 自研 CLI（`evals/`） | — | 以 Langfuse trace 为数据源，5 个指标维度打分出报告 |
+
+### 外部服务：必需还是可选
+
+| 组件 | 必需性 | 缺了会怎样 |
+|---|---|---|
+| **PostgreSQL + pgvector** | **必需** | 业务全线不可用：注册登录、会话、检查点、长期记忆都依赖它；`GET /health` 返回 503 |
+| **Redis** | 可选 | 缓存退化为进程内 TTL 缓存，限流退化为内存计数（多副本下额度不共享，单机开发无感） |
+| **Langfuse** | 可选 | 启动打一条 `langfuse_auth_check_failed` 告警，追踪关闭，其余功能照常 |
+| **LLM 端点**（OpenAI 兼容 / 各供应商） | 对话功能必需 | `/chatbot/*` 不可用；注册、登录、会话管理不受影响 |
+
+> 指标栈（Prometheus / starlette-prometheus）**未引入**：逐请求耗时由 structlog 的 `http_request_completed` 日志承担，每行带 `duration_ms`。
+
+### 可选依赖组
+
+| 用途 | 安装方式 | 装进来什么 |
+|---|---|---|
+| Anthropic 模型 | `uv sync --extra anthropic` | `langchain-anthropic` |
+| 本地模型 | `uv sync --extra ollama` | `langchain-ollama` |
+| Google 模型 | `uv sync --extra google-genai` | `langchain-google-genai` |
+| 开发辅助 | `uv sync --extra dev` | `black` / `isort` / `flake8` / `djlint` / `pyinstrument`（耗时超 `PROFILING_THRESHOLD_SECONDS` 时落 JSON 报告到 `PROFILING_DIR`） |
 
 ## 快速开始
 
