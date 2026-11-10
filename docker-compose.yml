@@ -12,8 +12,8 @@
 # 直接调 compose 时要自己带环境文件，否则 ${POSTGRES_USER} 之类会解析成空：
 #   APP_ENV=development docker-compose --env-file .env.development up -d
 #
-# 只想单独起数据层、不构建 app 镜像，用 docker-compose.datastores.yml
-# （两者都会占 5432 / 6379，别同时启动）。
+# 只想单独起数据层、不构建 app 镜像，用 `up -d db redis` 指定服务名：
+#   APP_ENV=development docker-compose --env-file .env.development up -d db redis
 # =============================================================================
 
 # 项目名显式固定，不随目录名变化：网络名与容器名前缀都依赖它。

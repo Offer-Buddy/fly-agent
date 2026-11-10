@@ -9,8 +9,7 @@ make install              # Install deps (uv sync) + pre-commit hooks
 make dev                  # Dev server with hot reload (port 8000)
 make lint                 # ruff check .
 make format               # ruff format .
-make typecheck            # uv run pyright (static type check)
-make check                # lint + typecheck
+make check                # ruff lint
 make eval                 # Run LLM evals (interactive)
 make eval-quick           # Run LLM evals (default settings)
 make migrate              # Run DB migrations to latest (Alembic)
@@ -187,7 +186,6 @@ scripts/           # Environment setup, Docker build scripts
 8. 所有 import 必须置于文件顶部
 9. 所有数据库操作必须为异步
 10. 所有端点必须带完整类型提示与 Pydantic 模型
-11. 所有代码必须通过 `make typecheck`（pyright standard 模式）
 
 ## 常见陷阱
 

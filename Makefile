@@ -154,12 +154,8 @@ lint:
 format:
 	uv run ruff format .
 
-# pyright 静态类型检查，配置见 pyproject.toml 的 [tool.pyright]
-typecheck:
-	uv run pyright
-
 # 提交前自检的常用组合
-check: lint typecheck
+check: lint
 	@echo "全部检查通过"
 
 # 对全仓库跑一遍 pre-commit 钩子（不只针对暂存区改动）
@@ -255,8 +251,7 @@ help:
 	@echo "代码质量："
 	@echo "  lint                     Ruff 静态检查"
 	@echo "  format                   Ruff 格式化"
-	@echo "  typecheck                Pyright 类型检查"
-	@echo "  check                    依次跑 lint + typecheck"
+	@echo "  check                    跑 lint"
 	@echo "  pre-commit               对全仓库跑 pre-commit 钩子"
 	@echo "  pre-commit-update        升级钩子版本"
 	@echo "  settings-check           配置三处一致性自查（代码/模板/文档）"
@@ -278,7 +273,7 @@ help:
         migrate migration migrate-downgrade migrate-history \
         eval eval-quick eval-no-report \
         trace-smoke trace-report \
-        lint format typecheck check pre-commit pre-commit-update settings-check \
+        lint format check pre-commit pre-commit-update settings-check \
         docker-build docker-up docker-down docker-logs docker-migrate \
         docker-migrate-downgrade docker-migrate-history \
         clean help

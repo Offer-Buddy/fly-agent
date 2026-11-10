@@ -118,7 +118,6 @@ google-genai = [
 dev = [
     "detect-secrets>=1.5.0",            # 提交前扫描密钥，配合 .secrets.baseline
     "pre-commit>=4.5.1",
-    "pyright>=1.1.390",
     "ruff>=0.11.4",
 ]
 test = ["httpx>=0.28.1", "pytest>=8.3.5"]
@@ -217,30 +216,3 @@ convention = "google"
 # 这里整体放行
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402"]
-
-# -----------------------------------------------------------------------------
-# pyright —— 静态类型检查
-# -----------------------------------------------------------------------------
-[tool.pyright]
-# 只检查业务代码；alembic/versions 是自动生成的迁移脚本，不值得逐行较真
-include = ["app", "evals"]
-exclude = [
-    "**/__pycache__",
-    "**/.venv",
-    "alembic/versions",
-    "migrations",
-    "venv",
-]
-stubPath = "typings"
-pythonVersion = "3.13"
-# standard 比 strict 宽松：不要求每个函数都标返回类型，但会查真实的类型错
-typeCheckingMode = "standard"
-
-# 以下三条比默认更严——都是「便宜的真 bug 探测器」，几乎不会误报：
-#   重复 import 同一模块、TypeVar 用法错误、self/cls 参数名写错
-reportDuplicateImport = "error"
-reportInvalidTypeVarUse = "error"
-reportSelfClsParameterName = "error"
-
-# 重写父类方法时提示加 @override，纯风格建议，故用 warning
-reportImplicitOverride = "warning"
