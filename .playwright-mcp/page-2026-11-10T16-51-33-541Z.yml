@@ -1,0 +1,503 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: L01
+      - generic [ref=e6]: MCP 工程化
+      - generic [ref=e7]: 存量项目接入 · 单课
+    - heading "别为 AI 再写一套后端" [level=1] [ref=e8]
+    - paragraph [ref=e9]:
+      - text: fly-agent 已经有
+      - code [ref=e10]: /api/v1/chatbot/chat
+      - text: 。要让 AI 客户端也能用，正确做法不是再起一个服务，而是在同一个进程上多开一道
+      - code [ref=e11]: /mcp
+      - text: 的门 —— 一份 agent、一层网关。
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: 认知
+        - generic [ref=e15]: 第二套后端的代价
+      - generic [ref=e16]:
+        - generic [ref=e17]: 本质
+        - generic [ref=e18]: MCP 是个子应用
+      - generic [ref=e19]:
+        - generic [ref=e20]: 规矩
+        - generic [ref=e21]: 三个必踩的点
+      - generic [ref=e22]:
+        - generic [ref=e23]: 骨架
+        - generic [ref=e24]: agent 单例下沉
+      - generic [ref=e25]:
+        - generic [ref=e26]: 网关
+        - generic [ref=e27]: JWT + 按会话限流
+      - generic [ref=e28]:
+        - generic [ref=e29]: Demo
+        - generic [ref=e30]: 三新两改
+  - navigation [ref=e31]:
+    - generic [ref=e32]:
+      - link "开场" [ref=e33] [cursor=pointer]:
+        - /url: "#s-open"
+      - link "本质" [ref=e34] [cursor=pointer]:
+        - /url: "#s-essence"
+      - link "三条规矩" [ref=e35] [cursor=pointer]:
+        - /url: "#s-rule"
+      - link "搭骨架" [ref=e36] [cursor=pointer]:
+        - /url: "#s-build"
+      - link "网关" [ref=e37] [cursor=pointer]:
+        - /url: "#s-gate"
+      - link "项目 Demo" [ref=e38] [cursor=pointer]:
+        - /url: "#s-demo"
+  - main [ref=e39]:
+    - generic [ref=e40]:
+      - generic [ref=e41]:
+        - text: 这一课的目标
+        - emphasis [ref=e42]: 三档都达成，才算真的接上了
+      - table [ref=e43]:
+        - rowgroup [ref=e44]:
+          - row [ref=e45]:
+            - columnheader "档位" [ref=e46]
+            - columnheader "你能做到" [ref=e47]
+            - columnheader "怎么算达成" [ref=e48]
+          - row [ref=e49]:
+            - cell "写出" [ref=e50]
+            - cell "一个不认框架的 chat service，两条通道都调它" [ref=e52]
+            - cell [ref=e53]:
+              - code [ref=e54]: app/services/chat.py
+              - text: 里搜不到 fastapi / fastmcp 的 import
+          - row [ref=e55]:
+            - cell "接上" [ref=e56]
+            - cell [ref=e58]:
+              - text: 同一个进程里
+              - code [ref=e59]: /api/v1
+              - text: 与
+              - code [ref=e60]: /mcp
+              - text: 共用一份 agent
+            - cell [ref=e61]:
+              - text: MCP 写进去的消息，REST 的
+              - code [ref=e62]: /api/history
+              - text: 能查到
+          - row [ref=e63]:
+            - cell "说清" [ref=e64]
+            - cell "lifespan 为什么要合并、MCP 额度为什么要放宽" [ref=e66]
+            - cell [ref=e67]:
+              - text: 合上文档能指出
+              - code [ref=e68]: main.py
+              - text: 里那两行
+    - generic [ref=e69]:
+      - generic [ref=e70]: 边界
+      - text: 只做「接入」：不做 OAuth 授权服务器、不做多副本共享额度、不把流式对话包成工具 —— 三件都是后面独立的话题，不影响今天把门开出来。
+    - figure "两条通道在进业务层之前必须合并 —— 合并点越靠前，越不会写出两套逻辑。" [ref=e71]:
+      - img "调用方经过网关，分流到 REST 路由与 MCP 工具，最后都落到同一份业务层" [ref=e72]:
+        - generic [ref=e74]: 调用方
+        - generic [ref=e75]: 前端 / AI 客户端
+        - generic [ref=e77]: 网关
+        - generic [ref=e78]: JWT → 按会话限流
+        - generic [ref=e80]: 两个门
+        - generic [ref=e81]: /api/v1 · /mcp
+        - generic [ref=e83]: 业务层
+        - generic [ref=e84]: services
+    - table [ref=e86]:
+      - rowgroup [ref=e87]:
+        - row [ref=e88]:
+          - columnheader "段" [ref=e89]
+          - columnheader "章" [ref=e90]
+          - columnheader "这一段交代什么" [ref=e91]
+          - columnheader "做完能判断什么" [ref=e92]
+        - row [ref=e93]:
+          - cell "看清问题" [ref=e94]
+          - cell "一" [ref=e95]
+          - cell "第二套后端是怎么长出来的，代价落在哪" [ref=e96]
+          - cell "你的项目该不该合并" [ref=e97]
+        - row [ref=e98]:
+          - cell "定结构" [ref=e99]
+          - cell "二 · 三" [ref=e100]
+          - cell "挂载点、lifespan、中间件位置" [ref=e101]
+          - cell "接法对不对" [ref=e102]
+        - row [ref=e103]:
+          - cell "拆业务" [ref=e104]
+          - cell "四" [ref=e105]
+          - cell "agent 单例为什么要从路由里拿出来" [ref=e106]
+          - cell "业务层干净不干净" [ref=e107]
+        - row [ref=e108]:
+          - cell "上网关" [ref=e109]
+          - cell "五" [ref=e110]
+          - cell "JWT 复用、额度按会话分通道" [ref=e111]
+          - cell "谁能进、能打多快" [ref=e112]
+        - row [ref=e113]:
+          - cell "落地" [ref=e114]
+          - cell "六" [ref=e115]
+          - cell "三个新文件、两处改动、一遍验收" [ref=e116]
+          - cell "能不能合进主干" [ref=e117]
+    - heading "一、开场：第二套后端是怎么长出来的" [level=2] [ref=e118]
+    - paragraph [ref=e119]: fly-agent 的对话入口长这样，跑得好好的：
+    - generic [ref=e120]: "# app/api/v1/chatbot.py @router.post(\"/chat\", response_model=ChatResponse) @limiter.limit(settings.RATE_LIMIT_ENDPOINTS[\"chat\"][0]) async def chat(chat_request: ChatRequest, session: Session = Depends(get_current_session)): result = await agent.get_response(chat_request.messages, session.id, user_id=str(session.user_id), username=session.username) return ChatResponse(messages=result)"
+    - paragraph [ref=e121]: 现在要让 AI 客户端也能问同一个助手。最省事的写法是新建一个文件，把同一件事再包一遍：
+    - generic [ref=e122]: "# mcp_server.py —— 第二步，问题从这里开始 @mcp.tool def ask(message: str) -> str: result = agent.get_response([{\"role\": \"user\", \"content\": message}], \"demo-thread\", username=\"alice\") # 谁在问？先写死 return result[-1][\"content\"]"
+    - paragraph [ref=e123]: 于是三个问题同时冒出来：这个工具里到底是谁在提问？限流管得到 MCP 通道吗？AI 说的话，前端刷新能看见吗？——一个都答不上来，因为同一个业务已经有了两处入口、两套身份。
+    - generic [ref=e124]:
+      - generic [ref=e125]: 这一课要解决的事
+      - text: 不是 MCP 难，是它被当成了第二个后端。它本该是同一个 FastAPI 上多开的一扇门，门后还是那份 agent。
+    - heading "二、本质：FastMCP 交出来的就是一个 ASGI 应用" [level=2] [ref=e126]
+    - paragraph [ref=e127]:
+      - code [ref=e128]: mcp.http_app()
+      - text: 返回的不是"另一个框架"，它和 FastAPI 一样是个 ASGI app —— 所以
+      - code [ref=e129]: app.mount()
+      - text: 能直接把它挂进来，共用一个进程、一份内存、一个端口。
+    - generic [ref=e130]:
+      - generic [ref=e131]: 三种接法，选一个
+      - generic [ref=e132]:
+        - generic [ref=e133]: 起两个进程
+        - generic [ref=e134]: REST 一个、MCP 一个。agent、连接池、会话表各一份，鉴权写两遍，部署多一个容器 —— 就是开场那个坑的放大版。
+      - generic [ref=e135]:
+        - generic [ref=e136]: 自动转换
+        - generic [ref=e137]:
+          - code [ref=e138]: FastMCP.from_fastapi(app)
+          - text: 能把全部路由一次变成工具。这个项目里连
+          - code [ref=e139]: /auth/register
+          - text: 、
+          - code [ref=e140]: /auth/login
+          - text: 都会一起暴露给 AI —— 粒度与描述都控制不住，不能用在有鉴权的项目上。
+      - generic [ref=e141]:
+        - generic [ref=e142]: 挂载子应用
+        - generic [ref=e143]: 只把该给 AI 的能力写成工具，其余不暴露。一个进程、一层网关、一份 agent —— 这里走这条。
+    - paragraph [ref=e144]: 挂载之后，请求在进程里的真实形状是这样，中间件在 router 外面这句话决定了后面所有事：
+    - generic [ref=e145]: FastAPI app（app/main.py） ├─ Gateway 中间件：先过这里（JWT → 按会话限流） └─ router ├─ /api/v1 ├→ include_router(api_router) ← 现有四条对话路由 └─ /mcp └→ MCP 子应用（路由到这儿时，网关已经放行过了）
+    - paragraph [ref=e146]:
+      - text: 所以 mount 进来的东西天然被网关罩住 —— 前提是网关加在
+      - code [ref=e147]: app
+      - text: 上，而不是加在某个路由上。在 fly-agent 里，就是
+      - code [ref=e148]: main.py
+      - text: 里那两行并排站着：一行
+      - code [ref=e149]: include_router
+      - text: ，一行
+      - code [ref=e150]: mount
+      - text: 。
+    - heading "三、三条规矩：踩错一条就卡半天" [level=2] [ref=e151]
+    - paragraph [ref=e152]: 这三条都是在 fly-agent 这种「已经跑了一阵」的项目上才暴露出来的，前后端都能起、日志也好看，错的地方全在细节里。
+    - table [ref=e153]:
+      - rowgroup [ref=e154]:
+        - row [ref=e155]:
+          - columnheader "#" [ref=e156]
+          - columnheader "写法" [ref=e157]
+          - columnheader "写错的症状" [ref=e158]
+        - row [ref=e159]:
+          - cell "1" [ref=e160]
+          - cell [ref=e161]:
+            - code [ref=e162]: http_app(path="/")
+            - text: +
+            - code [ref=e163]: mount("/mcp", …)
+          - cell [ref=e164]:
+            - text: 端点其实在
+            - code [ref=e165]: /mcp/
+            - text: 。客户端连
+            - code [ref=e166]: /mcp
+            - text: 每次多一次 307，白白多吃一次限流额度。
+        - row [ref=e167]:
+          - cell "2" [ref=e168]
+          - cell [ref=e169]:
+            - code [ref=e170]: async with mcp_app.lifespan(app)
+            - text: 套进原来的 lifespan
+          - cell [ref=e171]:
+            - text: 写成
+            - code [ref=e172]: FastAPI(lifespan=mcp_app.lifespan)
+            - text: 是替换：缓存预热、图预热、连接池收尾全部消失，而启动日志一切正常。
+        - row [ref=e173]:
+          - cell "3" [ref=e174]
+          - cell [ref=e175]:
+            - code [ref=e176]: "get_http_headers(include={\"authorization\"})"
+          - cell [ref=e177]:
+            - text: 不写
+            - code [ref=e178]: include
+            - text: ，工具里永远读到空字符串，一直报「缺少 Bearer token」—— 可网关明明已经放行了。
+    - generic [ref=e179]:
+      - text: 第 2 条最坑：它连 500 都不报。实测把 lifespan 写成替换，日志照样打
+      - code [ref=e180]: Application startup complete
+      - text: ，
+      - code [ref=e181]: /mcp/
+      - text: 的工具清单照样能列出来，只有回头看「预热那条日志没打」才会发现。另一头更常见：完全不给 lifespan，启动也正常，直到 AI 客户端第一次握手才 500，日志里搜
+      - code [ref=e182]: task group
+      - text: 。
+    - heading "四、搭骨架：先把 agent 挪出路由" [level=2] [ref=e183]
+    - paragraph [ref=e184]: fly-agent 现在的结构是这样，对话逻辑和路由混在一个文件里：
+    - generic [ref=e185]: app/ ├─ api/v1/chatbot.py ← agent = LangGraphAgent() 挂在模块级 ├─ core/langgraph/graph.py ← 图、检查点连接池、LLM ├─ core/limiter.py ← slowapi，按 IP 计数 ├─ services/ ← 这一层已经有了，但对话编排还没搬进来 └─ main.py ← lifespan 里预热缓存 / 图 / mem0
+    - paragraph [ref=e186]:
+      - text: MCP 那边要用 agent，只能
+      - code [ref=e187]: from app.api.v1.chatbot import agent
+      - text: —— 把 API 层当库来 import。路由哪天改名、拆分，MCP 跟着一起挂；而
+      - code [ref=e188]: main.py
+      - text: 又从这里取
+      - code [ref=e189]: agent.create_graph()
+      - text: 做预热，三处互相牵着。
+    - paragraph [ref=e190]:
+      - text: 所以只动一件事：把 agent 和对话编排挪进
+      - code [ref=e191]: services/
+      - text: ，让路由与工具都退化成"薄壳"。
+    - generic [ref=e192]: app/ ├─ services/chat.py 新增：agent 单例 + 对话编排 ├─ mcp/tools.py 新增：三个工具 ├─ mcp/gateway.py 新增：JWT + 按会话限流 ├─ api/v1/chatbot.py 改：只留路由，业务转手给 service └─ main.py 改两处：lifespan 合并、mount
+    - generic [ref=e193]: ▤ app/services/chat.py（新增）
+    - generic [ref=e194]: "from typing import Any from app.core.langgraph.graph import LangGraphAgent from app.services.database import database_service class ChatService: def __init__(self) -> None: # 单例从 api/v1/chatbot.py 搬到这儿：REST 与 MCP 拿到的是同一个 agent self.agent = LangGraphAgent() async def chat(self, session_id: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]: \"\"\"两条通道共用：传会话 ID 进来，吐消息列表出去。\"\"\" session = await database_service.get_session(session_id) if session is None: raise LookupError(f\"session {session_id} 不存在\") return await self.agent.get_response( messages, session.id, user_id=str(session.user_id), username=session.username) # 模块级单例：整个进程一份 service = ChatService()"
+    - paragraph [ref=e195]:
+      - text: 对应地把路由改薄 ——
+      - code [ref=e196]: chatbot.py
+      - text: 里的
+      - code [ref=e197]: agent
+      - text: 变量消失，改由 service 提供：
+    - generic [ref=e198]: "# app/api/v1/chatbot.py（改前 → 改后） - agent = LangGraphAgent() + from app.services.chat import service - result = await agent.get_response(chat_request.messages, session.id, ...) + result = await service.chat(session.id, chat_request.messages)"
+    - paragraph [ref=e199]:
+      - generic [ref=e200]:
+        - text: 判断骨架对不对，就看
+        - code [ref=e201]: services/chat.py
+        - text: 顶部有没有 import fastapi 或 fastmcp。
+      - text: 没有，说明业务不认识协议，两条通道才可能共用它。
+    - generic [ref=e202]: ▤ app/mcp/tools.py（新增）
+    - generic [ref=e203]: "from typing import Any from fastmcp import FastMCP from fastmcp.server.dependencies import get_http_headers from app.services.chat import service from app.services.database import database_service from app.utils.auth import verify_token mcp = FastMCP(\"fly-agent-tools\") def caller() -> str: \"\"\"从请求头还原会话 ID：网关已验过签名，这里只解码。\"\"\" headers = get_http_headers(include={\"authorization\"}) token = headers.get(\"authorization\", \"\")[7:].strip() session_id = verify_token(token) if session_id is None: raise ValueError(\"无法识别调用者：缺少 Bearer token\") return session_id @mcp.tool async def whoami() -> dict[str, Any]: \"\"\"返回当前调用者身份，用来确认鉴权链路是否打通。\"\"\" session = await database_service.get_session(caller()) return {\"session_id\": session.id, \"username\": session.username} @mcp.tool async def ask_agent(message: str) -> dict[str, Any]: \"\"\"向助手提问，和前端调 /api/v1/chatbot/chat 是同一份业务。 Args: message: 要问的内容。 \"\"\" messages = [{\"role\": \"user\", \"content\": message}] return {\"messages\": await service.chat(caller(), messages)}"
+    - paragraph [ref=e204]:
+      - code [ref=e205]: caller()
+      - text: 是关键：AI 那边不知道自己是谁，但请求头带着网关验过的 JWT，工具这边就能还原出同一个人。鉴权只做一次，身份穿透到工具里。所以工具函数不需要
+      - code [ref=e206]: user_id
+      - text: 这种参数 —— 也就没有"传错人就查到别人数据"这条路。
+    - heading "五、网关：一次鉴权，两条通道都算数" [level=2] [ref=e207]
+    - paragraph [ref=e208]: 项目里的限流是 slowapi：按端点挂装饰器、按 IP 计数。
+    - generic [ref=e209]: "# app/core/limiter.py limiter = Limiter(key_func=get_remote_address, default_limits=settings.RATE_LIMIT_DEFAULT, storage_uri=_storage_uri) # app/api/v1/chatbot.py @router.post(\"/chat\") @limiter.limit(settings.RATE_LIMIT_ENDPOINTS[\"chat\"][0]) # 默认 30 per minute async def chat(...): ..."
+    - paragraph [ref=e210]: 这套在 REST 上没毛病，但装饰器只挂得到路由函数，挂不到 mount 进来的子应用。要么给 MCP 的每个工具再写一套，要么下沉一层、在 ASGI 上做一次 —— 后者顺手把项目里另一个问题也治了：按 IP 计数。既然网关里已经解出了 JWT，限流就该按人算。
+    - generic [ref=e211]: ▤ app/mcp/gateway.py（新增）
+    - generic [ref=e212]: "class Gateway: \"\"\"JWT → 限流 → 放行。顺序不能反：先知道是谁，限流才有意义。\"\"\" def __init__(self, app): self.app = app async def __call__(self, scope, receive, send): if scope[\"type\"] != \"http\" or scope[\"path\"] in PUBLIC_PATHS: return await self.app(scope, receive, send) auth = Headers(scope=scope).get(\"authorization\", \"\") token = auth[7:].strip() if auth.lower().startswith(\"bearer \") else \"\" session_id = verify_token(token) # 项目里现成的函数，直接复用 if session_id is None: return await self._deny(send, 401, \"invalid_token\", \"缺少或无效的 Bearer token\") channel = \"/mcp\" if scope[\"path\"].startswith(\"/mcp\") else \"/api/v1\" wait = _take(f\"{session_id}|{channel}\", QUOTA[channel], time.monotonic()) if wait > 0: return await self._deny(send, 429, \"rate_limited\", \"请求太频繁\", wait) # 身份写进 scope：路由函数和 MCP 工具都能取到，不用再解一次 token scope.setdefault(\"state\", {})[\"session_id\"] = session_id await self.app(scope, receive, send)"
+    - generic [ref=e213]:
+      - generic [ref=e214]:
+        - generic [ref=e215]: 按 IP 限流（项目现状）
+        - generic [ref=e216]: key_func = get_remote_address
+        - generic [ref=e217]: 一间办公室共用一个出口 IP，一个人打满全组被限；而且网关里已经有身份了，却退回去用 IP。
+      - generic [ref=e218]:
+        - generic [ref=e219]: 按会话限流
+        - generic [ref=e220]: "key = f\"{session_id}|{channel}\""
+        - generic [ref=e221]: 额度跟着人走；同一个人的 REST 与 MCP 各自计数，刷网页不会把 AI 那边挤掉。
+    - heading "为什么 MCP 的额度必须比 REST 宽" [level=3] [ref=e222]
+    - paragraph [ref=e223]:
+      - text: 这是最容易翻车的一处：一次工具调用 ≠ 一个 HTTP 请求。实测一次「列工具 + 调一次工具」的会话，服务端收到
+      - generic [ref=e224]:
+        - text: 3 个 POST
+        - code [ref=e225]: /mcp/
+      - text: ，之后每多调一次工具再加一帧。
+    - generic [ref=e226]: "QUOTA = {\"/api/v1\": 30, \"/mcp\": 300} # 同一分钟窗口；两条都设 30，MCP 调十几次工具就到顶"
+    - generic [ref=e227]:
+      - text: 别用调大额度来糊弄。放宽额度只是承认传输层帧数不同；真要按业务量计费，得在工具函数里计数（一次
+      - code [ref=e228]: tools/call
+      - text: 记一次），而不是在 HTTP 层数请求。
+    - heading "六、项目 Demo：三新两改，合进主干" [level=2] [ref=e229]
+    - paragraph [ref=e230]: 把前五节落到 fly-agent 上，一共动五个文件。三个新增、两个改动，现有 REST 端点的路径与返回结构一个都不碰。
+    - table [ref=e231]:
+      - rowgroup [ref=e232]:
+        - row [ref=e233]:
+          - columnheader "文件" [ref=e234]
+          - columnheader "动作" [ref=e235]
+          - columnheader "内容" [ref=e236]
+        - row [ref=e237]:
+          - cell [ref=e238]:
+            - code [ref=e239]: app/services/chat.py
+          - cell "新增" [ref=e240]
+          - cell "agent 单例 + 对话编排，两条通道都调它（第四节）" [ref=e241]
+        - row [ref=e242]:
+          - cell [ref=e243]:
+            - code [ref=e244]: app/mcp/tools.py
+          - cell "新增" [ref=e245]
+          - cell [ref=e246]:
+            - code [ref=e247]: whoami
+            - text: /
+            - code [ref=e248]: ask_agent
+            - text: /
+            - code [ref=e249]: list_history
+            - text: 三个工具
+        - row [ref=e250]:
+          - cell [ref=e251]:
+            - code [ref=e252]: app/mcp/gateway.py
+          - cell "新增" [ref=e253]
+          - cell "JWT + 按会话限流（第五节）" [ref=e254]
+        - row [ref=e255]:
+          - cell [ref=e256]:
+            - code [ref=e257]: app/api/v1/chatbot.py
+          - cell "改" [ref=e258]
+          - cell [ref=e259]:
+            - text: 删掉模块级
+            - code [ref=e260]: agent
+            - text: ，四行路由改成调
+            - code [ref=e261]: service.chat()
+        - row [ref=e262]:
+          - cell [ref=e263]:
+            - code [ref=e264]: app/main.py
+          - cell "改两处" [ref=e265]
+          - cell [ref=e266]:
+            - text: lifespan 合并、
+            - code [ref=e267]: mount
+            - text: 挂载
+    - generic [ref=e268]: ▤ app/main.py（改这两处，其余原样）
+    - generic [ref=e269]: "mcp_app = mcp.http_app(path=\"/\") # ① 变成 ASGI 子应用 @asynccontextmanager async def lifespan(app: FastAPI): # 原来的三个预热（cache / graph / memory）一行不改，照旧跑 await cache_service.initialize() await agent.create_graph() await memory_service.initialize() async with mcp_app.lifespan(app): # ② 合并，不是替换 yield await cache_service.close() if agent._connection_pool: await agent._connection_pool.close() app = FastAPI(..., lifespan=lifespan) # ③ 交的还是原来那个 lifespan app.add_middleware(Gateway) # ④ 网关在最外层 app.include_router(api_router, prefix=settings.API_V1_STR) # ⑤ 不动 app.mount(\"/mcp\", mcp_app) # ⑥ 端点 = /mcp/"
+    - paragraph [ref=e270]:
+      - text: 注意 ③ 和 ⑥ 的位置关系：网关加在
+      - code [ref=e271]: app
+      - text: 上、
+      - code [ref=e272]: mount
+      - text: 也在
+      - code [ref=e273]: app
+      - text: 上，所以 MCP 子应用天生就在网关里面。而
+      - code [ref=e274]: include_router
+      - text: 那一行原封不动 —— 这就是"接入"和"重构"的区别。
+    - generic [ref=e275]:
+      - generic [ref=e276]:
+        - generic [ref=e277]: 验收
+        - generic [ref=e278]: 六步，从启动到两条通道数据一致
+        - generic [ref=e279]: Windows / macOS 通用
+      - list [ref=e280]:
+        - listitem [ref=e281]:
+          - generic [ref=e282]: "1"
+          - generic [ref=e283]:
+            - text: 起服务：
+            - code [ref=e284]: uvicorn app.main:app --reload
+            - generic [ref=e285]:
+              - text: 看到 日志里三行预热照旧出现 —— 这是 lifespan 没被替换的唯一证据，别只看
+              - code [ref=e286]: Application startup complete
+        - listitem [ref=e287]:
+          - generic [ref=e288]: "2"
+          - generic [ref=e289]:
+            - text: 不带 token 打现有接口：
+            - code [ref=e290]: "curl -X POST http://127.0.0.1:8000/api/v1/chatbot/chat -d '{\"message\":\"hi\"}'"
+            - generic [ref=e291]:
+              - text: 看到
+              - code [ref=e292]: "401"
+              - text: +
+              - code [ref=e293]: "{\"error\":\"invalid_token\"}"
+        - listitem [ref=e294]:
+          - generic [ref=e295]: "3"
+          - generic [ref=e296]:
+            - text: 登录拿 token（
+            - code [ref=e297]: /api/v1/auth/login
+            - text: ），带上
+            - code [ref=e298]: "Authorization: Bearer <token>"
+            - text: 再问一次
+            - generic [ref=e299]:
+              - text: 看到
+              - code [ref=e300]: "200"
+              - text: ，返回的是你熟悉的那条
+              - code [ref=e301]: ChatResponse
+        - listitem [ref=e302]:
+          - generic [ref=e303]: "4"
+          - generic [ref=e304]:
+            - text: 连打 7 次同一接口（额度 30 次 / 分钟就少打点，或用 demo 的 6 次 / 10 秒）
+            - generic [ref=e305]:
+              - text: 看到 前 6 次
+              - code [ref=e306]: "200"
+              - text: ，第 7 次
+              - code [ref=e307]: "429"
+              - text: ，响应头带
+              - code [ref=e308]: retry-after
+        - listitem [ref=e309]:
+          - generic [ref=e310]: "5"
+          - generic [ref=e311]:
+            - text: 换成 AI 客户端身份：
+            - code [ref=e312]: python mcp_client.py
+            - generic [ref=e313]:
+              - text: 看到 工具清单三项、
+              - code [ref=e314]: whoami
+              - text: 返回你的 session、
+              - code [ref=e315]: ask_agent
+              - text: 拿到回复
+        - listitem [ref=e316]:
+          - generic [ref=e317]: "6"
+          - generic [ref=e318]:
+            - text: 回 REST 侧查历史：
+            - code [ref=e319]: GET /api/history
+            - text: （demo）或刷新前端会话
+            - generic [ref=e320]: 看到 MCP 刚问的那句话在这儿 —— 两条通道聊的是同一个会话
+      - generic [ref=e321]:
+        - text: 怎么判断接对了四个证据同时成立：
+        - code [ref=e322]: "401"
+        - text: /
+        - code [ref=e323]: "200"
+        - text: /
+        - code [ref=e324]: "429"
+        - text: 三种状态码都亲手打出来；MCP 工具清单只有你写的那几个、没有
+        - code [ref=e325]: register
+        - text: /
+        - code [ref=e326]: login
+        - text: ；
+        - code [ref=e327]: whoami
+        - text: 返回的是当前登录的会话而不是写死的名字；第 5 步与第 6 步看到的是同一批消息。少任何一个，说明某条通道绕过了网关或绕过了 service。
+      - generic [ref=e328]:
+        - text: 报错先看这里① AI 客户端首次握手 500，日志有
+        - code [ref=e329]: task group
+        - text: —— lifespan 完全没给。② 启动正常、MCP 也能用，但预热日志一条没打 —— lifespan 被替换了，改成
+        - code [ref=e330]: async with mcp_app.lifespan(app)
+        - text: 。③ 工具一直报「缺少 Bearer token」——
+        - code [ref=e331]: get_http_headers()
+        - text: 默认剔掉
+        - code [ref=e332]: authorization
+        - text: ，要写
+        - code [ref=e333]: "include={\"authorization\"}"
+        - text: 。④ 客户端每次多一次 307 —— URL 末尾的斜杠别省。⑤
+        - code [ref=e334]: No matching distribution found for fastmcp
+        - text: —— 清华源没有这个包，换
+        - code [ref=e335]: "-i https://mirrors.aliyun.com/pypi/simple"
+        - text: 。
+    - generic [ref=e336]:
+      - text: 跑完这一遍，说明什么说明网关真的在 router 外面：同一段
+      - code [ref=e337]: verify_token
+      - text: ，同时挡住了 REST 请求和 AI 的工具调用；也说明业务真的只有一份 —— 否则第 6 步看不到第 5 步说的话。
+    - heading "哪些能力不要变成工具" [level=3] [ref=e338]
+    - generic [ref=e339]:
+      - generic [ref=e340]: 三条边界，比"能开什么"更重要
+      - generic [ref=e341]:
+        - generic [ref=e342]: 流式对话
+        - generic [ref=e343]:
+          - code [ref=e344]: /chat/stream
+          - text: 是 SSE 分帧，而工具是一问一答。硬包成工具只会让 AI 等一整段文本 —— 要流式，让客户端自己渲染工具结果。
+      - generic [ref=e345]:
+        - generic [ref=e346]: 写操作
+        - generic [ref=e347]: 删历史、改会话名、以后的下单退款，先别开。工具一旦存在，模型就可能自己去调；要开就单列一个工具，并在描述里写明"需用户确认"。
+      - generic [ref=e348]:
+        - generic [ref=e349]: 只读查询
+        - generic [ref=e350]: 问一句、看历史、查身份 —— 这类能力错了也只是看错，代价可控，最适合先开给 AI。
+    - generic [ref=e351]:
+      - generic [ref=e352]: 动手：把三个坑各踩一次
+      - list [ref=e353]:
+        - listitem [ref=e354]:
+          - text: 先
+          - code [ref=e355]: git commit
+          - text: ，改坏了好回滚。
+        - listitem [ref=e356]:
+          - text: 把
+          - code [ref=e357]: "get_http_headers(include={\"authorization\"})"
+          - text: 改回
+          - code [ref=e358]: get_http_headers()
+          - text: ，重跑
+          - code [ref=e359]: mcp_client.py
+          - text: ：网关放行了，工具却认不出人。
+        - listitem [ref=e360]:
+          - text: 把 lifespan 改成
+          - code [ref=e361]: FastAPI(lifespan=mcp_app.lifespan)
+          - text: ，重启：MCP 照样能用，预热日志全没了。
+        - listitem [ref=e362]:
+          - text: 把
+          - code [ref=e363]: QUOTA["/mcp"]
+          - text: 改成
+          - code [ref=e364]: "3"
+          - text: ，重跑客户端：第二次工具调用就被自己的限流打死。
+        - listitem [ref=e365]: 三处都改回来，再跑一遍全绿。
+    - generic [ref=e366]:
+      - generic [ref=e367]:
+        - generic [ref=e368]: P01
+        - generic [ref=e369]: 给 fly-agent 挂上 MCP 入口
+        - generic [ref=e370]: 已有 REST，想给 AI 开个门
+      - generic [ref=e371]: "# 角色 你是 Python 后端工程师。只做接入，不重构业务逻辑。 # 项目现状 FastAPI + LangGraph 的对话服务： app/api/v1/chatbot.py 四条路由；模块级 `agent = LangGraphAgent()` app/core/langgraph/graph.py agent 本体（图 + Postgres 检查点） app/core/limiter.py slowapi，key_func 是 get_remote_address app/main.py lifespan 里预热 cache / graph / memory 鉴权：HTTPBearer + app/utils/auth.py 的 verify_token()，token 的 sub 就是 session_id。 # 要做的四件事 1. 新建 app/services/chat.py：把 agent 单例与「取会话 → get_response」的编排搬进去， 对外只留 `service.chat(session_id, messages)` 2. 新建 app/mcp/tools.py：FastMCP，只暴露 whoami / ask_agent / list_history； 用 `get_http_headers(include={\"authorization\"})` + verify_token() 还原 session_id 3. 新建 app/mcp/gateway.py：纯 ASGI 中间件，验 JWT + 按 `session_id|channel` 滑动窗口限流， 两条通道额度分开 4. 改 app/main.py：lifespan 用 `async with mcp_app.lifespan(app)` 合并， 并在 include_router 旁边 `mount(\"/mcp\", mcp_app)` # 输出格式 - 新增与改动的文件都给完整内容，不要 diff 片段 - 结尾列出：MCP 端点的完整路径（含末尾斜杠） # 硬约束 - 不许改任何现有 REST 端点的路径与返回结构 - app/services/chat.py 不许 import fastapi / fastmcp - 不许把 /chat/stream、删历史、注册登录暴露成工具 - main.py 里原有的三个 try/except 预热必须保留 # 自检（输出前逐条回答） - services/chat.py 里还有框架依赖吗？ - lifespan 是合并还是替换？三个预热还会执行吗？ - 工具里怎么拿到调用者？少写 include={\"authorization\"} 会怎样？ - AI 通过工具能看到别人的会话吗？"
+      - generic [ref=e372]: 为什么这么写① 先贴现状，AI 才知道哪些东西不能动；② "不许改现有端点"是唯一的验收线；③ 第 3 问和第 4 问直接把这一课最贵的两个坑挡在提交前。
+      - generic [ref=e373]:
+        - text: AI 常在这里走偏把 lifespan 直接换成
+        - code [ref=e374]: mcp_app.lifespan
+        - text: ，或者顺手"优化"了
+        - code [ref=e375]: chatbot.py
+        - text: 的返回结构。发现后别补提示词，直接说"回退 chatbot.py 的返回结构，只保留抽 service 这一处改动"。
+      - generic [ref=e376]: 验收改前存一条 curl 输出，改后逐字比对；再跑一次不带 token 的工具调用，必须 401；最后看启动日志里三条预热是否还在。
+    - generic [ref=e377]:
+      - generic [ref=e378]: 一句话带走
+      - generic [ref=e379]: 业务只写一遍，网关只加一层 —— MCP 是同一扇门后的第二条通道。
+  - navigation [ref=e380]:
+    - generic [ref=e381]: ← 本模块第一课，没有前置
+    - link "配套代码 → 最小可跑复刻：三新两改，含验收脚本" [ref=e382] [cursor=pointer]:
+      - /url: fly-agent-mcp/README.md
+      - generic [ref=e383]: 配套代码 →
+      - generic [ref=e384]: 最小可跑复刻：三新两改，含验收脚本
+  - generic [ref=e385]: L01 · MCP 工程化 · 存量项目接入

@@ -4,6 +4,8 @@
 匿名会话（无 user_id）直接跳过长期记忆，避免所有匿名用户挤进同一个分区。
 """
 
+from urllib.parse import quote_plus
+
 from langchain_core.messages import BaseMessage
 from mem0 import AsyncMemory
 
@@ -44,17 +46,24 @@ class MemoryService:
             if settings.LONG_TERM_MEMORY_EMBEDDER_API_KEY:
                 embedder_config["api_key"] = settings.LONG_TERM_MEMORY_EMBEDDER_API_KEY
 
+            # 密码等字段可能含 @ : / 等 URL 保留字符。mem0 内部是用
+            # f"postgresql://{user}:{password}@{host}:{port}/{dbname}" 直接拼的，
+            # 不转义就会把 host 顶掉（表现为 getaddrinfo 失败）。这里显式传
+            # connection_string，并在拼装时做 quote_plus，与 graph.py /
+            # services/database.py 的写法保持一致。
+            connection_url = (
+                "postgresql://"
+                f"{quote_plus(settings.POSTGRES_USER)}:{quote_plus(settings.POSTGRES_PASSWORD)}"
+                f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+            )
+
             self._memory = await AsyncMemory.from_config(
                 config_dict={
                     "vector_store": {
                         "provider": "pgvector",
                         "config": {
                             "collection_name": settings.LONG_TERM_MEMORY_COLLECTION_NAME,
-                            "dbname": settings.POSTGRES_DB,
-                            "user": settings.POSTGRES_USER,
-                            "password": settings.POSTGRES_PASSWORD,
-                            "host": settings.POSTGRES_HOST,
-                            "port": settings.POSTGRES_PORT,
+                            "connection_string": connection_url,
                             "embedding_model_dims": settings.LONG_TERM_MEMORY_EMBEDDING_DIMS,
                         },
                     },

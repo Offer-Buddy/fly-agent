@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from dotenv import load_dotenv
+import uvicorn
 
 # psycopg 的异步连接无法运行在 Windows 默认的 ProactorEventLoop 上，
 # 表现为 LangGraph 检查点连接池的每条连接都超时。这里切到 Selector 事件循环。
@@ -204,3 +205,14 @@ async def health_check(request: Request) -> JSONResponse:
     status_code = status.HTTP_200_OK if db_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
 
     return JSONResponse(content=response, status_code=status_code)
+
+
+if __name__ == "__main__":
+    # 直接运行本文件即可起开发服务器（PyCharm 右键运行 / python app/main.py）。
+    #
+    # reload=True 不只是为了热重载：Windows 上 uvicorn 只在子进程模式
+    # （use_subprocess=True）才会把事件循环切成 SelectorEventLoop，而
+    # psycopg 的异步连接在默认的 ProactorEventLoop 上会全部失败。
+    # 本模块顶部的 set_event_loop_policy 在这里是空操作（uvicorn 会先建好
+    # 自己的循环再 import 本模块），所以必须靠 reload 兜住。
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

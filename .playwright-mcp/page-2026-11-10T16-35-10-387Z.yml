@@ -1,0 +1,407 @@
+- generic [ref=f3e2]:
+  - banner [ref=f3e3]:
+    - generic [ref=f3e4]:
+      - generic [ref=f3e5]: L01
+      - generic [ref=f3e6]: MCP 工程化
+      - generic [ref=f3e7]: FastAPI 集成 · 单课
+    - heading "别为 AI 再写一套后端" [level=1] [ref=f3e8]
+    - paragraph [ref=f3e9]: MCP 不是一个新服务，是 FastAPI 上多开的第二个门。一份业务、一层网关，鉴权和限流同时管住人和 AI 两条通道。
+    - generic [ref=f3e10]:
+      - generic [ref=f3e11]:
+        - generic [ref=f3e12]: 认知
+        - generic [ref=f3e13]: 两套后端的代价
+      - generic [ref=f3e14]:
+        - generic [ref=f3e15]: 本质
+        - generic [ref=f3e16]: MCP 是个子应用
+      - generic [ref=f3e17]:
+        - generic [ref=f3e18]: 规矩
+        - generic [ref=f3e19]: 三个必踩的点
+      - generic [ref=f3e20]:
+        - generic [ref=f3e21]: 搭建
+        - generic [ref=f3e22]: 业务下沉
+      - generic [ref=f3e23]:
+        - generic [ref=f3e24]: 网关
+        - generic [ref=f3e25]: 鉴权 + 限流
+      - generic [ref=f3e26]:
+        - generic [ref=f3e27]: 跑通
+        - generic [ref=f3e28]: 三个状态码
+      - generic [ref=f3e29]:
+        - generic [ref=f3e30]: 上线
+        - generic [ref=f3e31]: 三个替换点
+  - navigation [ref=f3e32]:
+    - generic [ref=f3e33]:
+      - link "开场" [ref=f3e34] [cursor=pointer]:
+        - /url: "#s-open"
+      - link "本质" [ref=f3e35] [cursor=pointer]:
+        - /url: "#s-essence"
+      - link "三条规矩" [ref=f3e36] [cursor=pointer]:
+        - /url: "#s-rule"
+      - link "搭骨架" [ref=f3e37] [cursor=pointer]:
+        - /url: "#s-build"
+      - link "网关" [ref=f3e38] [cursor=pointer]:
+        - /url: "#s-gate"
+      - link "跑通" [ref=f3e39] [cursor=pointer]:
+        - /url: "#s-run"
+      - link "上线" [ref=f3e40] [cursor=pointer]:
+        - /url: "#s-prod"
+  - main [ref=f3e41]:
+    - generic [ref=f3e42]:
+      - generic [ref=f3e43]:
+        - text: 课程目标
+        - emphasis [ref=f3e44]: 三档都达成，这一课才算过
+      - table [ref=f3e45]:
+        - rowgroup [ref=f3e46]:
+          - row [ref=f3e47]:
+            - columnheader "档位" [ref=f3e48]
+            - columnheader "你能做到" [ref=f3e49]
+            - columnheader "怎么算达成" [ref=f3e50]
+          - row [ref=f3e51]:
+            - cell "写出" [ref=f3e52]
+            - cell "一个同进程、双入口的服务骨架" [ref=f3e54]
+            - cell [ref=f3e55]:
+              - code [ref=f3e56]: app/service.py
+              - text: 里搜不到 fastapi / fastmcp 的 import
+          - row [ref=f3e57]:
+            - cell "跑通" [ref=f3e58]
+            - cell "人和 AI 两条通道都过同一层网关" [ref=f3e60]
+            - cell "401、200、429 三个状态码都亲手打出来" [ref=f3e61]
+          - row [ref=f3e62]:
+            - cell "说清" [ref=f3e63]
+            - cell "网关为什么在挂载点外层、MCP 额度为什么要放宽" [ref=f3e65]
+            - cell [ref=f3e66]:
+              - text: 合上文档能指到
+              - code [ref=f3e67]: main.py
+              - text: 的那两行
+    - generic [ref=f3e68]:
+      - generic [ref=f3e69]: 边界
+      - text: 不做 OAuth 授权服务器、不做多副本共享额度、不做会话持久化 —— 这三件换
+      - code [ref=f3e70]: security.py
+      - text: 一个文件就能接上，不必现在动手。
+    - figure "两条通道在进业务层之前必须合并 —— 合并点越靠前，越不会写出两套逻辑。" [ref=f3e71]:
+      - img "调用方经过网关，分流到 REST 路由与 MCP 工具，最后都落到同一份业务层" [ref=f3e72]:
+        - generic [ref=f3e74]: 调用方
+        - generic [ref=f3e75]: 人 / AI 客户端
+        - generic [ref=f3e77]: 网关
+        - generic [ref=f3e78]: 鉴权 → 限流
+        - generic [ref=f3e80]: 两个门
+        - generic [ref=f3e81]: /api 路由 · /mcp 工具
+        - generic [ref=f3e83]: 业务层
+        - generic [ref=f3e84]: service.py
+    - table [ref=f3e86]:
+      - rowgroup [ref=f3e87]:
+        - row [ref=f3e88]:
+          - columnheader "段" [ref=f3e89]
+          - columnheader "章" [ref=f3e90]
+          - columnheader "这一段交代什么" [ref=f3e91]
+          - columnheader "做完能判断什么" [ref=f3e92]
+        - row [ref=f3e93]:
+          - cell "看清问题" [ref=f3e94]
+          - cell "一" [ref=f3e95]
+          - cell "两套后端是怎么长出来的，代价落在哪" [ref=f3e96]
+          - cell "你的场景该不该统一" [ref=f3e97]
+        - row [ref=f3e98]:
+          - cell "定结构" [ref=f3e99]
+          - cell "二 · 三" [ref=f3e100]
+          - cell "挂载点、lifespan、中间件位置" [ref=f3e101]
+          - cell "骨架对不对" [ref=f3e102]
+        - row [ref=f3e103]:
+          - cell "上网关" [ref=f3e104]
+          - cell "四 · 五" [ref=f3e105]
+          - cell "业务下沉、鉴权与限流的位置" [ref=f3e106]
+          - cell "谁能进、能打多快" [ref=f3e107]
+        - row [ref=f3e108]:
+          - cell "验结果" [ref=f3e109]
+          - cell "六 · 七" [ref=f3e110]
+          - cell "三个状态码、三处生产替换" [ref=f3e111]
+          - cell "能不能上线" [ref=f3e112]
+    - heading "一、开场：第二套后端是怎么长出来的" [level=2] [ref=f3e113]
+    - paragraph [ref=f3e114]: 第一步都长这样：先给前端写一套 REST，跑得好好的。
+    - generic [ref=f3e115]: "@app.post(\"/api/tasks\") async def create_task(payload: TaskIn, request: Request): return service.create_task(payload.title, request.state.user)"
+    - paragraph [ref=f3e116]: 第二步，要让 AI 客户端也能建任务。于是新建一个文件，把同一件事再写一遍 —— 只是换了个装饰器：
+    - generic [ref=f3e117]: "@mcp.tool def create_task(title: str) -> dict: return service.create_task(title, \"alice\") # 身份？先写死吧"
+    - paragraph [ref=f3e118]: 现在问三个问题：标题长度校验改在哪一处？限流对 MCP 那套生效了吗？AI 建的任务，前端能看见吗？——三个都答不上来，因为已经有了两份真相。
+    - generic [ref=f3e119]:
+      - generic [ref=f3e120]: 这一课要解决的事
+      - text: 不是 MCP 难，是它被当成了第二个后端。它本该是同一个后端上多开的一扇门。
+    - heading "二、本质：FastMCP 交出来的就是一个 ASGI 应用" [level=2] [ref=f3e121]
+    - paragraph [ref=f3e122]:
+      - code [ref=f3e123]: mcp.http_app()
+      - text: 返回的不是"另一个框架"，它和 FastAPI 一样是个 ASGI app —— 所以
+      - code [ref=f3e124]: app.mount()
+      - text: 能直接把它挂进来，共用一个进程、一份内存、一个端口。
+    - generic [ref=f3e125]:
+      - generic [ref=f3e126]: 三种接法，选一个
+      - generic [ref=f3e127]:
+        - generic [ref=f3e128]: 起两个进程
+        - generic [ref=f3e129]: REST 一个、MCP 一个。状态不共享，鉴权写两遍，部署多一份 —— 就是开场那个坑的放大版。
+      - generic [ref=f3e130]:
+        - generic [ref=f3e131]: 自动转换
+        - generic [ref=f3e132]:
+          - code [ref=f3e133]: FastMCP.from_fastapi(app)
+          - text: 能把全部路由一次变成工具。适合原型，但整个 API 都暴露给 AI，工具粒度和描述都控制不住。
+      - generic [ref=f3e134]:
+        - generic [ref=f3e135]: 挂载子应用
+        - generic [ref=f3e136]: 只把该给 AI 的能力写成工具，其余不暴露。一个进程、一层网关、一份业务 —— 这里走这条。
+    - paragraph [ref=f3e137]: 挂载之后，请求在进程里的真实形状是这样，中间件在 router 外面这句话决定了后面所有事：
+    - generic [ref=f3e138]: FastAPI app ├─ Gateway 中间件：先过这里（鉴权 → 限流） └─ router ├─ /api/* ├→ 普通路由函数 └─ /mcp └→ MCP 子应用（路由到这儿时，网关已经放行过了）
+    - paragraph [ref=f3e139]: 所以 mount 进来的东西天然被网关罩住 —— 前提是网关加在 app 上，而不是加在某个路由上。
+    - heading "三、三条规矩：踩错一条就卡半天" [level=2] [ref=f3e140]
+    - table [ref=f3e141]:
+      - rowgroup [ref=f3e142]:
+        - row [ref=f3e143]:
+          - columnheader "#" [ref=f3e144]
+          - columnheader "写法" [ref=f3e145]
+          - columnheader "写错的症状" [ref=f3e146]
+        - row [ref=f3e147]:
+          - cell "1" [ref=f3e148]
+          - cell [ref=f3e149]:
+            - code [ref=f3e150]: http_app(path="/")
+            - text: +
+            - code [ref=f3e151]: mount("/mcp", …)
+          - cell [ref=f3e152]:
+            - text: 端点其实在
+            - code [ref=f3e153]: /mcp/
+            - text: 。客户端连
+            - code [ref=f3e154]: /mcp
+            - text: 每次多一次 307 跳转，白白多吃一次限流额度。
+        - row [ref=f3e155]:
+          - cell "2" [ref=f3e156]
+          - cell [ref=f3e157]:
+            - code [ref=f3e158]: FastAPI(lifespan=mcp_app.lifespan)
+          - cell [ref=f3e159]:
+            - text: 首次
+            - code [ref=f3e160]: initialize
+            - text: 直接 500，日志里是
+            - code [ref=f3e161]: StreamableHTTPSessionManager task group was not initialized
+            - text: 。
+        - row [ref=f3e162]:
+          - cell "3" [ref=f3e163]
+          - cell [ref=f3e164]:
+            - code [ref=f3e165]: app.add_middleware(Gateway)
+          - cell "装饰器只管得到路由函数，管不到 mount 进来的子应用 —— MCP 通道裸奔。" [ref=f3e166]
+    - generic [ref=f3e167]:
+      - text: 第 2 条最坑的地方是它不报在启动时。
+      - code [ref=f3e168]: uvicorn
+      - text: 正常打印
+      - code [ref=f3e169]: Application startup complete
+      - text: ，
+      - code [ref=f3e170]: /health
+      - text: 也 200，只有 AI 客户端第一次握手才 500。看到 500 先去日志搜
+      - code [ref=f3e171]: task group
+      - text: ，别怀疑工具函数。
+    - heading "四、搭骨架：先把业务摘出来" [level=2] [ref=f3e172]
+    - paragraph [ref=f3e173]:
+      - text: 整个 demo 五个文件，每个只干一件事。
+      - generic [ref=f3e174]:
+        - text: 判断骨架对不对，看
+        - code [ref=f3e175]: service.py
+        - text: 顶部有没有 import 框架。
+    - generic [ref=f3e176]: fastmcp-demo/ ├─ app/ │ ├─ service.py 业务：建任务 / 列任务 / 完成任务（纯 Python） │ ├─ tools.py MCP：把 service 包成工具 │ ├─ security.py 网关：鉴权 + 限流 │ └─ main.py 外壳：路由 + 挂载 + 装网关 ├─ client_check.py 以 AI 客户端身份验收 └─ requirements.txt
+    - generic [ref=f3e177]: ▤ app/service.py
+    - generic [ref=f3e178]: "from itertools import count _TASKS: dict[int, dict] = {} _SEQ = count(1) def create_task(title: str, owner: str) -> dict: task_id = next(_SEQ) task = {\"id\": task_id, \"title\": title, \"owner\": owner, \"done\": False} _TASKS[task_id] = task return task def list_tasks(owner: str) -> list[dict]: return [t for t in _TASKS.values() if t[\"owner\"] == owner]"
+    - paragraph [ref=f3e179]:
+      - text: 注意每个函数都带
+      - code [ref=f3e180]: owner
+      - text: 。鉴权不是为了拦人，是为了知道是谁 —— 这条一旦落到参数上，两条通道的数据隔离就自动成立了，不用在两处各写一遍过滤。
+    - generic [ref=f3e181]: ▤ app/tools.py
+    - generic [ref=f3e182]: "from fastmcp import FastMCP from fastmcp.server.dependencies import get_http_headers from app import service from app.security import API_KEYS mcp = FastMCP(\"task-tools\") def caller() -> str: # 工具跑在 HTTP 请求里时，能直接读到调用方的请求头 return API_KEYS.get(get_http_headers().get(\"x-api-key\", \"\"), \"anonymous\") @mcp.tool def create_task(title: str) -> dict: \"\"\"新建一个任务。\"\"\" return service.create_task(title, caller())"
+    - paragraph [ref=f3e183]:
+      - code [ref=f3e184]: get_http_headers()
+      - text: 是关键：AI 那边不知道自己是谁，但请求头带着网关验过的 key，工具这边就能还原出同一个人。鉴权只做一次，身份穿透到工具里。
+    - generic [ref=f3e185]: ▤ app/main.py
+    - generic [ref=f3e186]: "from fastapi import FastAPI, Request from app import service from app.security import Gateway from app.tools import mcp mcp_app = mcp.http_app(path=\"/\") # ① 变成 ASGI 应用 app = FastAPI(lifespan=mcp_app.lifespan) # ② 交托生命周期 app.add_middleware(Gateway) # ③ 网关在最外层 app.mount(\"/mcp\", mcp_app) # ④ 端点 = /mcp/ @app.get(\"/api/tasks\") async def list_tasks(request: Request) -> dict: return {\"user\": request.state.user, \"items\": service.list_tasks(request.state.user)}"
+    - paragraph [ref=f3e187]:
+      - text: 四行就是全部集成工作。
+      - code [ref=f3e188]: request.state.user
+      - text: 不用自己赋值 —— 网关放行时已经写进
+      - code [ref=f3e189]: scope
+      - text: 了。
+    - heading "五、网关：鉴权和限流放在一起，一次管两条通道" [level=2] [ref=f3e190]
+    - paragraph [ref=f3e191]:
+      - text: 为什么不给路由加装饰器？因为
+      - code [ref=f3e192]: "@limiter.limit(\"6/minute\")"
+      - text: 这类写法只能挂在 FastAPI 的路由函数上，挂不到 mount 进来的 MCP 子应用。要么两套代码，要么下沉一层、在 ASGI 上做一次。
+    - generic [ref=f3e193]: ▤ app/security.py
+    - generic [ref=f3e194]: "class Gateway: \"\"\"鉴权 -> 限流 -> 放行。顺序不能反。\"\"\" def __init__(self, app): self.app = app async def __call__(self, scope, receive, send): if scope[\"type\"] != \"http\" or scope[\"path\"] in PUBLIC_PATHS: return await self.app(scope, receive, send) user = API_KEYS.get(Headers(scope=scope).get(\"x-api-key\", \"\")) if user is None: return await self._deny(send, 401, \"invalid_api_key\", \"缺少或错误的 x-api-key\") channel = \"/mcp\" if scope[\"path\"].startswith(\"/mcp\") else \"/api\" wait = _take_token(f\"{user}{channel}\", QUOTA[channel], time.monotonic()) if wait > 0: return await self._deny(send, 429, \"rate_limited\", \"请求太频繁\", wait) scope.setdefault(\"state\", {})[\"user\"] = user await self.app(scope, receive, send)"
+    - generic [ref=f3e195]:
+      - generic [ref=f3e196]:
+        - generic [ref=f3e197]: 按 IP 限流
+        - generic [ref=f3e198]: key = request.client.host
+        - generic [ref=f3e199]: 一个办公室共用一个出口 IP，一个人打满全组被限；而且网关里已经有身份了，却浪费掉。
+      - generic [ref=f3e200]:
+        - generic [ref=f3e201]: 按身份限流
+        - generic [ref=f3e202]: "key = f\"{user}{channel}\""
+        - generic [ref=f3e203]: 额度跟着账号走，多副本换 Redis 也只是换存储后端，key 结构不用改。
+    - heading "为什么 MCP 的额度必须比 REST 宽" [level=3] [ref=f3e204]
+    - paragraph [ref=f3e205]:
+      - text: 这是最容易翻车的一处：一次工具调用 ≠ 一个 HTTP 请求。客户端握手要
+      - code [ref=f3e206]: initialize
+      - text: 、
+      - code [ref=f3e207]: notifications/initialized
+      - text: 、
+      - code [ref=f3e208]: tools/list
+      - text: ，然后才是
+      - code [ref=f3e209]: tools/call
+      - text: ，一次会话眨眼就 5 帧以上。
+    - generic [ref=f3e210]: "QUOTA = {\"/api\": 6, \"/mcp\": 60} # 实测：两条都设 6，MCP 第三次工具调用就 429"
+    - generic [ref=f3e211]:
+      - text: 别用调大额度来糊弄。额度放宽只是承认传输层帧数不同；真要按业务量计费，得在工具函数里计数（一次
+      - code [ref=f3e212]: tools/call
+      - text: 记一次），而不是在 HTTP 层数请求。
+    - heading "六、跑通：三个状态码、四行输出" [level=2] [ref=f3e213]
+    - generic [ref=f3e214]:
+      - generic [ref=f3e215]:
+        - generic [ref=f3e216]: 演示
+        - generic [ref=f3e217]: 从空目录到两条通道都通
+        - generic [ref=f3e218]: Windows / macOS 通用
+      - list [ref=f3e219]:
+        - listitem [ref=f3e220]:
+          - generic [ref=f3e221]: "1"
+          - generic [ref=f3e222]:
+            - text: 建虚拟环境、装依赖：
+            - code [ref=f3e223]: python -m venv .venv
+            - text: ，激活后
+            - code [ref=f3e224]: pip install -r requirements.txt
+            - generic [ref=f3e225]:
+              - text: 看到
+              - code [ref=f3e226]: Successfully installed fastmcp-4.1.7 …
+        - listitem [ref=f3e227]:
+          - generic [ref=f3e228]: "2"
+          - generic [ref=f3e229]:
+            - text: 起服务：
+            - code [ref=f3e230]: uvicorn app.main:app --port 8000
+            - generic [ref=f3e231]:
+              - text: 看到
+              - code [ref=f3e232]: Application startup complete
+              - text: ，注意它不会报 MCP 的任何错 —— 缺 lifespan 的错要等第一次握手才现形
+        - listitem [ref=f3e233]:
+          - generic [ref=f3e234]: "3"
+          - generic [ref=f3e235]:
+            - text: 不带 key 打 REST：
+            - code [ref=f3e236]: curl http://127.0.0.1:8000/api/tasks
+            - generic [ref=f3e237]:
+              - text: 看到
+              - code [ref=f3e238]: "401"
+              - text: +
+              - code [ref=f3e239]: "{\"error\":\"invalid_api_key\"}"
+        - listitem [ref=f3e240]:
+          - generic [ref=f3e241]: "4"
+          - generic [ref=f3e242]:
+            - text: 带上 key：加
+            - code [ref=f3e243]: "-H \"x-api-key: sk-alice\""
+            - generic [ref=f3e244]:
+              - text: 看到
+              - code [ref=f3e245]: "{\"user\":\"alice\",\"items\":[]}"
+              - text: ；换成
+              - code [ref=f3e246]: sk-bob
+              - text: 永远是空列表
+        - listitem [ref=f3e247]:
+          - generic [ref=f3e248]: "5"
+          - generic [ref=f3e249]:
+            - text: 连打 8 次（额度 6 次 / 10 秒）
+            - generic [ref=f3e250]:
+              - text: 看到 前 6 次
+              - code [ref=f3e251]: "200"
+              - text: ，第 7 次开始
+              - code [ref=f3e252]: "429"
+              - text: ，响应头带
+              - code [ref=f3e253]: retry-after
+        - listitem [ref=f3e254]:
+          - generic [ref=f3e255]: "6"
+          - generic [ref=f3e256]:
+            - text: 另开窗口跑到 MCP 通道：
+            - code [ref=f3e257]: python client_check.py
+            - generic [ref=f3e258]:
+              - text: 看到 工具清单四项、
+              - code [ref=f3e259]: "我是谁: alice"
+              - text: 、新建成功、列表能查到
+      - generic [ref=f3e260]:
+        - text: 怎么判断装对了四个证据同时成立：
+        - code [ref=f3e261]: /api/tasks
+        - text: 能打出 401、200、429 三种状态码；
+        - code [ref=f3e262]: client_check.py
+        - text: 打出四行；
+        - code [ref=f3e263]: whoami
+        - text: 返回 alice；用 bob 的 key 走 MCP 看到的是空列表。少任何一个，说明某条通道绕过了网关。
+      - generic [ref=f3e264]:
+        - text: 报错先看这里①
+        - code [ref=f3e265]: No module named 'fastapi'
+        - text: —— fastmcp 4.x 不再捎带 fastapi，requirements 里要单独写。② 客户端首次握手 500 且日志有
+        - code [ref=f3e266]: task group
+        - text: —— 漏了
+        - code [ref=f3e267]: lifespan=mcp_app.lifespan
+        - text: 。③ MCP 通道莫名 429 —— 额度没按通道分档。
+    - generic [ref=f3e268]: 三条都过，说明什么说明你的网关真的在 router 外面：同一段鉴权代码，同时挡住了 REST 请求和 AI 的工具调用 —— 这就是"一层网关"的全部含义。
+    - generic [ref=f3e269]:
+      - generic [ref=f3e270]: 动手
+      - list [ref=f3e271]:
+        - listitem [ref=f3e272]:
+          - text: 先
+          - code [ref=f3e273]: git commit
+          - text: ，改坏了好回滚。
+        - listitem [ref=f3e274]:
+          - text: 把
+          - code [ref=f3e275]: QUOTA
+          - text: 里
+          - code [ref=f3e276]: /mcp
+          - text: 改成
+          - code [ref=f3e277]: "6"
+          - text: ，重跑
+          - code [ref=f3e278]: client_check.py
+          - text: ，确认 MCP 会话会被自己的限流打死 —— 亲眼看一次，比记十遍管用。
+        - listitem [ref=f3e279]:
+          - text: 把
+          - code [ref=f3e280]: Gateway
+          - text: 从
+          - code [ref=f3e281]: add_middleware
+          - text: 挪进某个路由的装饰器里，再跑
+          - code [ref=f3e282]: client_check.py
+          - text: ，确认不带 key 也能调通工具。
+        - listitem [ref=f3e283]: 改回来，两条都恢复。
+    - heading "七、上线：三个替换点，签名都不用改" [level=2] [ref=f3e284]
+    - table [ref=f3e285]:
+      - rowgroup [ref=f3e286]:
+        - row [ref=f3e287]:
+          - columnheader "现在是" [ref=f3e288]
+          - columnheader "换成" [ref=f3e289]
+          - columnheader "动哪里" [ref=f3e290]
+        - row [ref=f3e291]:
+          - cell [ref=f3e292]:
+            - text: 内存字典
+            - code [ref=f3e293]: _TASKS
+          - cell "数据库 / ORM，函数签名不变" [ref=f3e294]
+          - cell [ref=f3e295]:
+            - code [ref=f3e296]: service.py
+        - row [ref=f3e297]:
+          - cell [ref=f3e298]:
+            - text: 内存
+            - code [ref=f3e299]: _hits
+            - text: 滑动窗口
+          - cell "Redis，多副本共享额度" [ref=f3e300]
+          - cell [ref=f3e301]:
+            - code [ref=f3e302]: security.py
+        - row [ref=f3e303]:
+          - cell "静态 key 表" [ref=f3e304]
+          - cell "JWT / OAuth（FastMCP 自带 TokenVerifier）" [ref=f3e305]
+          - cell [ref=f3e306]:
+            - code [ref=f3e307]: security.py
+    - paragraph [ref=f3e308]: 三个替换点能这么便宜，是因为前面把边界切对了：业务不认识协议、网关不认识业务、外壳只做装配。反过来，如果一开始就把 service 写进路由函数里，换数据库时要改两处、加限流时要加两遍。
+    - generic [ref=f3e309]:
+      - generic [ref=f3e310]:
+        - generic [ref=f3e311]: P01
+        - generic [ref=f3e312]: 把存量 FastAPI 项目接上 MCP 入口
+        - generic [ref=f3e313]: 已有 REST，想给 AI 开个门
+      - generic [ref=f3e314]: "# 角色 你是 Python 后端工程师。只做集成，不重构既有业务逻辑。 # 现状 路由函数里直接写了业务和 SQL，例如： @app.get(\"/api/orders\") async def list_orders(user=Depends(current_user)): return await db.fetch_all(\"select * from orders where uid=:u\", {\"u\": user.id}) # 要做的三件事 1. 把这段逻辑原样抽成 `service.list_orders(uid)`，行为不变 2. 新建 `tools.py`，用 FastMCP 包一层，只暴露查询类能力 3. 在 `main.py` 里 mount 到 `/mcp`，并接上现有鉴权 # 输出格式 - 每个改动文件给完整内容，不要 diff 片段 - 结尾列出：新端点的完整路径（含末尾斜杠） # 硬约束 - 不许改任何现有 REST 端点的路径与返回结构 - service 层不许 import fastapi / fastmcp - 不许把写操作（下单、退款）暴露成工具 # 自检（输出前逐条回答） - 抽出 service 后，原来那条 curl 还能拿到一模一样的结果吗？ - 漏了 lifespan 会怎样，代码里补了吗？ - AI 通过工具能看到别人的数据吗？"
+      - generic [ref=f3e315]: 为什么这么写① 先贴现状，AI 才知道要保住什么；② "行为不变"是这条提示词唯一的验收线；③ 自检第三问直接把越权挡在提交前。
+      - generic [ref=f3e316]: AI 常在这里走偏顺手把路由函数"优化"了，返回结构跟着变。发现了不要补提示词，直接说"回退 list_orders 的返回结构，只保留抽 service 这一处改动"。
+      - generic [ref=f3e317]: 验收改前存一条 curl 输出，改后逐字比对；再跑一次不带 key 的工具调用，必须 401。
+    - generic [ref=f3e318]:
+      - generic [ref=f3e319]: 一句话带走
+      - generic [ref=f3e320]: 业务只写一遍，网关只加一层 —— MCP 是同一扇门后的第二条通道。
+  - navigation [ref=f3e321]:
+    - generic [ref=f3e322]: ← 本模块第一课，没有前置
+    - generic [ref=f3e323]:
+      - text: 配套代码在同目录
+      - code [ref=f3e324]: fastmcp-demo/
+      - text: —— 五个文件，含验收脚本
+  - generic [ref=f3e325]: L01 · MCP 工程化 · FastAPI 集成
