@@ -371,6 +371,12 @@ class Settings(BaseSettings):
     # 而不是等到 logging 配置读取时才炸
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     LOG_FORMAT: Literal["json", "console"] = "json"
+    # 日志文件头是否写入 UTF-8 BOM。Windows 上的查看器（记事本、PowerShell 5.1
+    # 的 Get-Content、Excel）默认按系统 ANSI 代码页解码，无 BOM 的 UTF-8 会被
+    # 当成 GBK，中文立刻变成「涓枃」这类乱码。开这个开关只在文件首字节补三个
+    # 字节，正文仍是标准 UTF-8。生产采集链（jq / Loki / fluent-bit）对 BOM 敏
+    # 感时设 LOG_FILE_BOM=false。
+    LOG_FILE_BOM: bool = True
 
     # ---- 性能剖析（仅 DEBUG 生效）----
     PROFILING_DIR: Path = Path("/tmp/fastapi_profiles")

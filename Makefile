@@ -144,6 +144,25 @@ trace-report:
 # 公钥私钥即可。上面两个目标都只读配置，指向哪套实例都成立。
 
 # ---------------------------------------------------------------------------
+# 日志查看
+# ---------------------------------------------------------------------------
+# 直接用 type / Get-Content 看日志，Windows 会按 cp936 解码 UTF-8 文件，
+# 中文变成「涓枃」这类乱码。这两个目标强制走 UTF-8，绕开系统代码页。
+#   make logs                          今天的日志，最后 50 条
+#   make logs LOG_ARGS="-n 200"        看更多
+#   make logs LOG_ARGS="--level error" 只看 error 及以上
+#   make logs LOG_ARGS="--follow"      持续跟随
+LOG_ARGS ?= -n 50
+
+logs:
+	@$(call run_with_env,uv run python scripts/view_logs.py $(LOG_ARGS))
+
+# 给历史日志文件补 UTF-8 BOM：补完之后资源管理器里双击也能正常看中文。
+# 只补文件头三个字节，正文不动，可重复执行。
+logs-fix-bom:
+	@uv run python scripts/view_logs.py --fix-bom
+
+# ---------------------------------------------------------------------------
 # 代码质量
 # ---------------------------------------------------------------------------
 # ruff check 只检查不修改；配合 `make format` 或 `make pre-commit` 才自动修
@@ -252,6 +271,11 @@ help:
 	@echo "  trace-report             追踪报表（HOURS=24 可改窗口）"
 	@echo "  （Langfuse 由外部独立部署，本项目只读 .env 配置）"
 	@echo ""
+	@echo "日志查看（UTF-8，解决 Windows 中文乱码）："
+	@echo "  logs                     看今天的日志，最后 50 条"
+	@echo "  logs LOG_ARGS=...        自定义参数，如 \"-n 200\"、\"--level error\"、\"--follow\""
+	@echo "  logs-fix-bom             给历史日志补 UTF-8 BOM（之后双击也能看）"
+	@echo ""
 	@echo "代码质量："
 	@echo "  lint                     Ruff 静态检查"
 	@echo "  format                   Ruff 格式化"
@@ -278,6 +302,7 @@ help:
         migrate migration migrate-downgrade migrate-history \
         eval eval-quick eval-no-report \
         trace-smoke trace-report \
+        logs logs-fix-bom \
         lint format typecheck check pre-commit pre-commit-update settings-check \
         docker-build docker-up docker-down docker-logs docker-migrate \
         docker-migrate-downgrade docker-migrate-history \

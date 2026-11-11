@@ -44,6 +44,9 @@ settings.LOG_DIR.mkdir(parents=True, exist_ok=True)
 # 日志文件保留天数：跨天切换文件时顺手清理更早的历史文件
 LOG_BACKUP_DAYS = 30
 
+# UTF-8 BOM 的三个字节。Windows 侧的查看器靠它认出「这是 UTF-8」
+UTF8_BOM = b"\xef\xbb\xbf"
+
 # 存放请求级上下文（user_id、session_id 等）的上下文变量
 _request_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar("request_context", default=None)
 
@@ -168,7 +171,33 @@ class JsonlFileHandler(logging.Handler):
         self._current_date = today
         self._file_path = get_log_file_path()
         self._prune_expired()
+        self._ensure_bom(self._file_path)
         return self._file_path
+
+    def _ensure_bom(self, path: Path) -> None:
+        """确保日志文件首字节是 UTF-8 BOM，仅在文件为空时写一次。
+
+        Windows 上的查看器（记事本、PowerShell 5.1 的 ``Get-Content``、Excel）
+        默认按系统 ANSI 代码页解码，简体中文环境即 cp936。无 BOM 的 UTF-8 会被
+        当成 GBK，中文立刻变成「涓枃」这类乱码。补上 BOM 后这些工具都能正确
+        识别；BOM 只占文件第一个字节，不影响逐行 JSON 解析。
+
+        Args:
+            path: 当天的日志文件路径
+        """
+        if not settings.LOG_FILE_BOM:
+            return
+
+        try:
+            if path.exists() and path.stat().st_size > 0:
+                # 已有内容（进程重启、跨天回写）说明 BOM 早就写过了，
+                # 再写一次会插到行中间，反而破坏 JSONL
+                return
+            with open(path, "ab") as f:
+                f.write(UTF8_BOM)
+        except OSError:
+            # 补 BOM 只影响可读性，写日志本身不能被它拖住
+            return
 
     def _prune_expired(self) -> None:
         """删除超过保留天数的历史日志，避免日志目录无限增长。"""
