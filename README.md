@@ -83,6 +83,52 @@ stop-local.bat    # 停止 API 与本地 PostgreSQL
 
 服务起来后，根路径 `GET /health` 返回各组件状态——数据库不可达时返回 503，方便负载均衡摘掉实例。
 
+## 法律知识库（RAG）
+
+本地法条库：70 部法规、8,984 条条款级分块（其中现行有效 8,309 条），
+向量模型 bge-small-zh-v1.5（512 维），精排 bge-reranker-base，全部本地跑，不调外部 API。
+
+### 一次性准备
+
+```bash
+# 1. 把两个模型放到 models/ 下（不入版本库，约 1.2GB）
+#    models/bge-small-zh-v1.5/  models/bge-reranker-base/
+
+# 2. 建表（law / law_chunk + HNSW 索引）
+alembic upgrade head
+
+# 3. 建索引：分块 → 向量化 → 写库（8,984 条在 CPU 上约 8 分钟）
+python scripts/build_legal_index.py --clear
+
+# 只想先验证链路，用 2 部法几分钟内跑完
+python scripts/build_legal_index.py --limit 2
+```
+
+索引建好后，`legal_search` 工具会在启动时自动预热（后台加载模型 + 构建 BM25 索引），
+Agent 需要法条依据时会自己调用它。
+
+### 验证
+
+```bash
+pytest tests/test_legal_rag.py -q          # 分块 / 条号归一化 / RRF 纯逻辑单测
+python scripts/eval_retrieval.py           # 100 条真实问答的检索评测（hit@k / MRR / 延迟）
+```
+
+评测结果写到 `data/eval/result_*.json`，含逐条明细（问了什么、召回了哪些条、第一名是不是标注条文），
+改完分块规则或换模型可以直接对比两份结果。
+
+### 关键配置
+
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| `RAG_ENABLED` | `true` | 关闭后不注册 `legal_search` 工具 |
+| `LAW_CORPUS_DIR` | `data/laws` | 语料目录，换一套法条不用改代码 |
+| `EMBEDDING_MODEL_PATH` | `models/bge-small-zh-v1.5` | 512 维，改模型要同步改表结构 |
+| `RERANKER_ENABLED` | `true` | 模型缺失时自动降级为 RRF 顺序，不报错 |
+| `RERANKER_SCORE_THRESHOLD` | `0.5` | **概率口径 0~1**（sigmoid 后），须用评测集标定 |
+| `RETRIEVER_TOP_K` | `20` | 每路召回条数，也是送进精排的候选数 |
+| `HNSW_EF_SEARCH` | `100` | 调大更准更慢；评测必须固定此值否则结果不可比 |
+
 ## 接口一览
 
 业务路由全部挂在 `/api/v1` 下：
@@ -122,14 +168,15 @@ fly-agent/
 │   │   ├── observability.py      #   Langfuse 初始化
 │   │   ├── langgraph/
 │   │   │   ├── graph.py          #   StateGraph 构建、节点与流转
-│   │   │   └── tools/            #   ask_human（HITL）、duckduckgo_search
+│   │   │   └── tools/            #   ask_human（HITL）、duckduckgo_search、legal_search
 │   │   └── prompts/              #   提示词：system / 会话命名 / 记忆抽取
-│   ├── models/                   # SQLModel 表：user / session / thread
+│   ├── models/                   # SQLModel 表：user / session / thread / law / law_chunk
 │   ├── schemas/                  # Pydantic 请求响应模型 + GraphState
 │   ├── services/                 # 业务服务
 │   │   ├── database.py           #   用户 / 会话 CRUD
 │   │   ├── memory.py             #   长期记忆（mem0 + pgvector）
 │   │   ├── session_naming.py     #   会话自动命名
+│   │   ├── rag/                  #   法律知识库：分块 / 向量 / BM25 / 精排 / 混合检索
 │   │   └── llm/                  #   模型注册表 + 调用服务（重试 / 降级）
 │   └── utils/                    # JWT、图工具函数、输入清洗、后台任务
 ├── alembic/                      # 数据库迁移

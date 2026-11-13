@@ -79,6 +79,10 @@ dependencies = [
     # 事件循环加速：Windows 没有 uvloop 轮子，按平台条件排除
     "uvloop>=0.22.1; platform_system != 'Windows'",
     "rich>=15.0.0",
+    "rank-bm25>=0.2.2",
+    "pgvector>=0.5.1",
+    "sentence-transformers>=6.3.0",
+    "fastmcp>=3.4.0",
 ]
 
 # -----------------------------------------------------------------------------

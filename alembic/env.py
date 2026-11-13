@@ -12,6 +12,10 @@ from sqlmodel import SQLModel
 
 from alembic import context
 from app.core.config import settings
+from app.models.law import (  # noqa: F401
+    Law,
+    LawChunkRow,
+)
 from app.models.session import Session  # noqa: F401
 from app.models.thread import Thread  # noqa: F401
 from app.models.user import User  # noqa: F401

@@ -41,8 +41,10 @@ from app.core.middleware import (
     ProfilingMiddleware,
 )
 from app.core.observability import langfuse_init
+from app.services import rag
 from app.services.database import database_service
 from app.services.memory import memory_service
+from app.utils.tasks import create_background_task
 
 # 加载环境变量（配置模块已加载过一次，这里兜底被单独 import 的场景）
 load_dotenv()
@@ -84,10 +86,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception("memory_service_pre_warm_failed", error=str(e))
 
+    # 预热法律知识库：加载向量模型与精排模型（CPU 上合计约 40 秒）+ 构建 BM25 索引。
+    # 放后台跑而不是 await：服务要先能接请求，检索能力晚几十秒到位可以接受。
+    # 预热没完成就调 legal_search 也不会错，只是第一次会等模型加载。
+    try:
+        create_background_task(rag.warmup())
+    except Exception as e:
+        logger.exception("law_rag_pre_warm_failed", error=str(e))
+
     yield
 
-    # 关闭阶段：先放缓存连接，再关数据库连接池
+    # 关闭阶段：先放缓存连接，再关数据库与知识库连接池
     await cache_service.close()
+    await rag.close_retriever()
     if agent._connection_pool:
         await agent._connection_pool.close()
         logger.info("connection_pool_closed")

@@ -32,6 +32,7 @@ class User(BaseModel, table=True):
 
     id: int = Field(default=None, primary_key=True)
     email: str = Field(unique=True, index=True)
+    sex: str = Field(default=None, index=True)
     hashed_password: str
     username: Optional[str] = Field(default=None, index=False)
     sessions: List["Session"] = Relationship(back_populates="user")

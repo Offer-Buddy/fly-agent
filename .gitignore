@@ -52,3 +52,13 @@ docs/
 
 # Reports
 evals/reports/
+
+# 本地模型（bge-small-zh + bge-reranker-base，合计约 1.2GB，不入库）
+# 注意开头的斜杠：只忽略仓库根目录的 models/，否则 app/models/ 会被一起吞掉
+/models/
+
+# 检索评测结果（每次运行都生成，只留本地）
+data/eval/result_*.json
+
+# Playwright MCP 抓取的调试快照（页面截图 / DOM dump）
+.playwright-mcp/

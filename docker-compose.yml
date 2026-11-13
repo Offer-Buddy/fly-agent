@@ -1,10 +1,11 @@
 # =============================================================================
-# 全栈编排：API + PostgreSQL(pgvector) + Redis
+# 全栈编排：PostgreSQL(pgvector) + Redis + 迁移 + API
 # =============================================================================
 # 常用命令（都通过 Makefile 包装，会顺带校验 ENV 与 .env 文件）：
-#   make docker-up      # 起 db + redis + app
+#   make docker-up      # 起 db + redis → 跑迁移 → 起 app
 #   make docker-down    # 停全部服务
 #   make docker-logs    # 跟日志
+#   make docker-migrate # 手动补跑一次迁移（栈已启动时）
 #
 # 监控栈（Prometheus / Grafana / cadvisor）已移除；LLM 链路追踪由外部独立部署的
 # Langfuse 承担，本项目只读 .env 里的 LANGFUSE_HOST 与 key，不负责它的起停。
@@ -21,6 +22,31 @@ name: fly-agent
 
 # 这行是 Compose V1 时代的格式声明，Compose V2 已忽略；保留只为兼容老命令。
 version: '3.8'
+
+# =============================================================================
+# 共享环境变量（YAML 锚点）
+# =============================================================================
+# migrate 和 app 必须用完全相同的数据库配置，否则会出现「迁移打到 A 库、
+# 服务连 B 库」——表建好了但服务说列不存在，排查起来极费时间。
+# 所以这里抽成一份锚点，两个服务引用同一份，从根上消掉这个可能性。
+x-app-environment: &app-environment
+  # 环境标识，决定 Settings 取哪套默认值
+  - APP_ENV=${APP_ENV:-development}
+  # `:?` 表示变量为空时立刻报错退出，防止用空密钥把服务跑起来
+  - JWT_SECRET_KEY=${JWT_SECRET_KEY:?必须为 JWT_SECRET_KEY 设置一个足够随机的长字符串}
+  # .env 文件里写的是 localhost（本机直跑时正确），但在容器里 localhost
+  # 指向容器自己，连不到数据库。这里改指 compose 的服务名，由内置 DNS 解析。
+  - POSTGRES_HOST=db
+  - REDIS_HOST=redis
+  # 用 1 号库，避开其他服务可能占用的 0 号库，防止 key 互相覆盖
+  # （compose 起的 redis 是共享实例，不是这个项目独占的）
+  - REDIS_DB=1
+  # Langfuse 由外部独立部署（不在本编排里）。容器内的 localhost 指容器自己，
+  # 所以默认改走 host.docker.internal 打到宿主机上的实例；端口按你的部署改。
+  #   宿主机 published 端口         → 保持默认 http://host.docker.internal:3010
+  #   app 与 Langfuse 同网络        → 设 LANGFUSE_HOST_INTERNAL=http://langfuse-web:3000
+  #   Langfuse 在别的机器           → 设 LANGFUSE_HOST_INTERNAL=http://<ip>:3000
+  - LANGFUSE_HOST=${LANGFUSE_HOST_INTERNAL:-http://host.docker.internal:3010}
 
 services:
   # ---------------------------------------------------------------------------
@@ -78,6 +104,60 @@ services:
       - app-net
 
   # ---------------------------------------------------------------------------
+  # 数据库迁移 —— 一次性任务，跑完就退出
+  # ---------------------------------------------------------------------------
+  # 为什么单独一个服务，而不是写进 app 的启动流程：
+  #   1. 多副本同时启动时，几个实例会并发抢同一把迁移锁，容易死锁或重复执行；
+  #      由 compose 保证只有一个 migrate 容器，天然串行。
+  #   2. 迁移失败时 app 根本不该起来——带着旧表结构提供服务，错误会以
+  #      「列不存在」的形式散落在各个接口里，比启动直接失败难查得多。
+  #   3. 迁移的耗时不该算进服务的启动预算，也不该被健康检查超时打断。
+  #
+  # 幂等性：已经是 head 时 alembic 只读一下 alembic_version 就退出，耗时几百毫秒，
+  # 所以每次 `up` 都跑一遍没有成本，不需要额外的开关。
+  #
+  # 注意与 Dockerfile 里 ENTRYPOINT 的关系：
+  #   镜像默认入口是 docker-entrypoint.sh，它会校验 JWT_SECRET_KEY 等变量。
+  #   迁移不需要这些，所以这里直接覆盖 entrypoint 成 alembic 二进制，
+  #   绕过那层校验，少一个失败点。
+  migrate:
+    build:
+      context: .
+      args:
+        APP_ENV: ${APP_ENV:-development}
+    # 与 app 共用同一个镜像标签：两个服务不会各构建一次，构建缓存也共享
+    image: fly-agent:${APP_ENV:-development}
+    # 覆盖镜像入口，直接执行 alembic；command 是传给 alembic 的子命令
+    entrypoint: ["/app/.venv/bin/alembic"]
+    command: ["upgrade", "head"]
+    env_file:
+      # 按 APP_ENV 挑环境文件；文件不存在时 compose 会直接报错退出
+      - .env.${APP_ENV:-development}
+    # 引用上面的锚点，保证与 app 连的是同一个库
+    environment: *app-environment
+    # Linux 宿主不会自带 host.docker.internal 解析；Docker Desktop（Win/Mac）自带，
+    # 这行在那边是无害的重复声明。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # 挂宿主机源码与迁移目录，让「改模型 → 起栈」这条链路立刻生效：
+      # autogenerate 和 upgrade 读的都是你刚改过的那份代码，而不是上次构建镜像时
+      # 的旧快照。生产环境（ENV=production）建议删掉这三行，用镜像内代码，
+      # 避免宿主机上的残留文件影响迁移结果。
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    depends_on:
+      db:
+        # 库没就绪就执行迁移，会直接连不上；必须先等健康检查通过
+        condition: service_healthy
+    # 一次性任务：跑完退出，绝不能重启（重启会反复执行迁移）
+    # 加引号是因为 YAML 会把裸 no 解析成布尔 False
+    restart: "no"
+    networks:
+      - app-net
+
+  # ---------------------------------------------------------------------------
   # 应用本体（FastAPI + LangGraph）
   # ---------------------------------------------------------------------------
   app:
@@ -86,6 +166,8 @@ services:
       args:
         # 传给 Dockerfile 的 ARG APP_ENV，决定镜像内的默认环境标识
         APP_ENV: ${APP_ENV:-development}
+    # 与 migrate 共用同一镜像标签，避免重复构建
+    image: fly-agent:${APP_ENV:-development}
     ports:
       - "8000:8000"
     volumes:
@@ -97,24 +179,8 @@ services:
     env_file:
       # 按 APP_ENV 挑环境文件；文件不存在时 compose 会直接报错退出
       - .env.${APP_ENV:-development}
-    environment:
-      # environment 段的优先级高于 env_file，这里放三类「必须覆盖」的变量
-      - APP_ENV=${APP_ENV:-development}
-      # `:?` 表示变量为空时立刻报错退出，防止用空密钥把服务跑起来
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?必须为 JWT_SECRET_KEY 设置一个足够随机的长字符串}
-      # .env 文件里写的是 localhost（本机直跑时正确），但在容器里 localhost
-      # 指向容器自己，连不到数据库。这里改指 compose 的服务名，由内置 DNS 解析。
-      - POSTGRES_HOST=db
-      - REDIS_HOST=redis
-      # 用 1 号库，避开其他服务可能占用的 0 号库，防止 key 互相覆盖
-      # （compose 起的 redis 是共享实例，不是这个项目独占的）
-      - REDIS_DB=1
-      # Langfuse 由外部独立部署（不在本编排里）。容器内的 localhost 指 app 自己，
-      # 所以默认改走 host.docker.internal 打到宿主机上的实例；端口按你的部署改。
-      #   宿主机 published 端口         → 保持默认 http://host.docker.internal:3010
-      #   app 与 Langfuse 同网络        → 设 LANGFUSE_HOST_INTERNAL=http://langfuse-web:3000
-      #   Langfuse 在别的机器           → 设 LANGFUSE_HOST_INTERNAL=http://<ip>:3000
-      - LANGFUSE_HOST=${LANGFUSE_HOST_INTERNAL:-http://host.docker.internal:3010}
+    # environment 段的优先级高于 env_file，放的是「必须覆盖」的变量
+    environment: *app-environment
     # Linux 宿主不会自带 host.docker.internal 解析；Docker Desktop（Win/Mac）自带，
     # 这行在那边是无害的重复声明。
     extra_hosts:
@@ -123,6 +189,10 @@ services:
       db:
         # 等到健康检查通过再启动，否则应用会在启动瞬间连不上库而崩溃重启
         condition: service_healthy
+      migrate:
+        # 等迁移容器成功退出（exit 0）才启动。迁移失败时 app 不会起来，
+        # 这是刻意的——宁可服务不可用，也不要带着错误的表结构对外提供服务。
+        condition: service_completed_successfully
     healthcheck:
       # 探 HTTP 层的 /health，能同时验证「进程活着」和「依赖可用」
       # （/health 内部会检查数据库连通性）。

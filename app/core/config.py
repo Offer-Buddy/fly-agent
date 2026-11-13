@@ -393,6 +393,40 @@ class Settings(BaseSettings):
     # 这不是配置项，而是与 LangGraph 检查点存储的固定契约，故用 ClassVar
     CHECKPOINT_TABLES: ClassVar[list[str]] = ["checkpoint_blobs", "checkpoint_writes", "checkpoints"]
 
+    # ---- 法律知识库（RAG + pgvector）----
+    # 总开关。关掉之后 legal_search 工具不会注册，模型也看不到它
+    RAG_ENABLED: bool = True
+    # 语料目录（相对路径按项目根目录解析）。改这里就能换一套法条，不用改代码
+    LAW_CORPUS_DIR: str = "data/laws"
+    # 向量模型目录。bge-small-zh-v1.5 的 hidden_size 是 512 —— 不是 384
+    EMBEDDING_MODEL_PATH: str = "models/bge-small-zh-v1.5"
+    # 向量维度必须与模型真实维度一致：写死 512 才能建 HNSW 索引，
+    # 换成 bge-base-zh(768) 要改这里 + 改表结构 + 重算全部向量
+    EMBEDDING_DIM: int = 512
+    # 建库时的批大小。CPU 上 32 比较稳，调大容易把内存吃满
+    EMBEDDING_BATCH_SIZE: int = 32
+    # 精排开关。模型缺失时自动降级为 RRF 顺序，不会让检索挂掉
+    RERANKER_ENABLED: bool = True
+    RERANKER_MODEL_PATH: str = "models/bge-reranker-base"
+    # 精排后返回条数，也是最终喂给模型的法条数量
+    RERANKER_TOP_N: int = 5
+    # 精排阈值：低于它的结果视为「不可信」。口径是**概率**（sigmoid 后 0~1）：
+    # 实测无关条文 ≈ 0.000，相关条文 0.45~0.99。0.3 是起点，换模型必须重新标定
+    # 标定结果（100 条评测集）：0.3 几乎不过滤（97/100 判为可信），0.5 过滤 7 条、
+    # 只误伤 1 条正确结果，可信集内命中率 59.8% → 63.3%。再往上收益递减且误伤变多。
+    # 注意分数分布饱和（中位 0.94），阈值区分力有限，别指望它兜住「查错了」
+    RERANKER_SCORE_THRESHOLD: float = 0.5
+    # 每路召回条数。20 是精度与延迟的折中：再大精排会变慢，再小召回不够
+    RETRIEVER_TOP_K: int = 20
+    # RRF 平滑常数，原论文经验值 60。作用是把头部名次的差距压平
+    RRF_K: int = 60
+    # HNSW 的候选集大小。调大更准更慢；**评测必须固定这个值**，否则结果不可比。
+    # 注意 40 不是随便取的：pgvector 的代价估算会随 ef_search 上涨，
+    # 在 8 千条这个规模上 ef_search=100 会让规划器直接放弃索引改走全表扫描
+    # （实测 51ms / 全表 vs 2.1ms / 索引）。40 是 pgvector 默认值，top20 与精确
+    # 扫描重合度约 0.95，是这张表上的甜点。数据量涨到十万级再往上调。
+    HNSW_EF_SEARCH: int = 40
+
     # ---- Redis 缓存（可选：只要填了 host 就启用）----
     REDIS_HOST: str = ""
     REDIS_PORT: int = 6379
